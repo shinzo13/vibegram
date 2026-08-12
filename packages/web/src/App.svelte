@@ -1,0 +1,735 @@
+<script>
+  import { onMount } from 'svelte';
+  import { agentColor, alertLabel, describe, mode, plural, time } from './format.js';
+  import Tree from './Tree.svelte';
+
+  // The read-only token comes from the link: /r/<token>. The room id is not
+  // accepted here on purpose — it travels through logs, the token does not.
+  const viewToken = window.location.pathname.startsWith('/r/')
+    ? window.location.pathname.slice(3).split('/')[0]
+    : '';
+  let roomName = $state('');
+  let denied = $state(false);
+  let agents = $state([]);
+  let plan = $state({ items: [], notes: { body: '' }, revision: 0, acks: [], proposedBy: null });
+  let events = $state([]);
+  let tree = $state([]);
+  let connected = $state(false);
+
+  let stream = null;
+  let feedEl;
+
+  const acked = $derived(
+    new Set(plan.acks.filter((a) => a.revision === plan.revision).map((a) => a.nick)),
+  );
+
+  /** Tree header summary: how much of the repository is spoken for right now. */
+  const treeStats = $derived.by(() => {
+    const holders = new Set();
+    let paths = 0;
+    const walk = (nodes) => {
+      for (const node of nodes) {
+        if (node.heldHere) {
+          holders.add(node.heldBy);
+          paths += 1;
+        }
+        walk(node.children);
+      }
+    };
+    walk(tree);
+    // Built here rather than in markup: template line breaks would leak into
+    // the rendered text as stray whitespace.
+    return `${holders.size} ${plural(holders.size, 'holder', 'holders')} · ${paths} ${plural(paths, 'claimed path', 'claimed paths')}`;
+  });
+
+  async function loadState() {
+    const res = await fetch(`/api/state?view=${encodeURIComponent(viewToken)}`);
+    if (!res.ok) {
+      denied = true;
+      return;
+    }
+    const state = await res.json();
+    roomName = state.room?.name ?? '';
+    agents = state.agents;
+    plan = state.plan;
+    events = state.events;
+    await loadTree();
+  }
+
+  // The tree is a separate request: it is large and changes far less often
+  // than the rest, so it has no business inside the common state payload.
+  async function loadTree() {
+    const res = await fetch(`/api/tree?view=${encodeURIComponent(viewToken)}`);
+    if (res.ok) tree = (await res.json()).tree;
+  }
+
+  /**
+   * Side panels are re-read whole — re-deriving conflict logic in the browser
+   * is pointless. The feed is deliberately left alone: it already holds the
+   * event that arrived over the stream, and overwriting it would drop what
+   * just came in and race with late responses.
+   */
+  let refreshing = false;
+  async function refreshPanels() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const res = await fetch(`/api/state?view=${encodeURIComponent(viewToken)}`);
+      if (!res.ok) return;
+      const state = await res.json();
+      agents = state.agents;
+      plan = state.plan;
+      await loadTree();
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  function listen() {
+    stream?.close();
+    stream = new EventSource(`/api/stream?view=${encodeURIComponent(viewToken)}`);
+    stream.addEventListener('hello', () => (connected = true));
+    stream.addEventListener('append', (e) => {
+      const event = JSON.parse(e.data);
+      // A reconnect can replay an event that is already on screen.
+      if (events.some((existing) => existing.id === event.id)) return;
+      events = [...events, event];
+      refreshPanels();
+    });
+    stream.onerror = () => (connected = false);
+  }
+
+  onMount(async () => {
+    if (!viewToken) {
+      denied = true;
+      return;
+    }
+    await loadState();
+    if (!denied) listen();
+  });
+
+  // Follow the tail, but only when the reader is already there: otherwise
+  // reading older events would be yanked away by every new arrival.
+  $effect(() => {
+    events.length;
+    if (!feedEl) return;
+    const atBottom = feedEl.scrollHeight - feedEl.scrollTop - feedEl.clientHeight < 80;
+    if (atBottom) queueMicrotask(() => (feedEl.scrollTop = feedEl.scrollHeight));
+  });
+</script>
+
+<header>
+  <span class="wordmark">vibegram</span>
+  <span class="tick"></span>
+  <span class="room">{roomName}</span>
+  <span class="conn" class:lost={!connected}>
+    <span class="conn-dot"></span>{connected ? 'stream live' : 'connection lost'}
+  </span>
+  <span class="readonly">read only</span>
+</header>
+
+{#if denied}
+  <div class="denied">
+    <p>This feed needs a link.</p>
+    <p class="hint">Ask the team for the view link — it looks like /r/&lt;token&gt;. A room id will not do.</p>
+  </div>
+{:else}
+<div class="body">
+  <aside class="left">
+    <div class="scroll">
+      <h2 class="label agents-label">agents</h2>
+      {#each agents as agent}
+        <div class="agent" class:offline={agent.status !== 'online'}>
+          <span
+            class="key"
+            style:background={agent.status === 'online' ? agentColor(agent.nick) : '#2b2e35'}
+          ></span>
+          <div class="agent-body">
+            <span class="nick" style:color={agentColor(agent.nick)}>{agent.nick}</span>
+            {#if agent.description}<span class="desc">{agent.description}</span>{/if}
+            {#if agent.skills?.length}<span class="meta">{agent.skills.join(' · ')}</span>{/if}
+            {#if agent.branch}<span class="meta">branch {agent.branch}</span>{/if}
+            {#if agent.hooksAlive === false}
+              <span class="meta unprotected">hooks off — writes not blocked</span>
+            {/if}
+            {#if agent.focus?.planItem}
+              <span class="meta doing">doing: {agent.focus.planItem.text}</span>
+            {/if}
+            {#if agent.focus?.holding?.length}
+              <span class="meta">holds: {agent.focus.holding.join(', ')}</span>
+            {/if}
+          </div>
+        </div>
+      {:else}
+        <p class="empty">nobody connected</p>
+      {/each}
+
+      <h2 class="label plan-label">
+        plan {#if plan.revision}<span class="rev">v{plan.revision}</span>{/if}
+      </h2>
+      {#if plan.items.length === 0}
+        <p class="empty">no plan published yet</p>
+      {:else}
+        <div class="plan">
+          {#each plan.items as item}
+            <div class="item">
+              <span class="square {item.status}"></span>
+              <div class="item-body">
+                <span class="text" class:done={item.status === 'done'}>{item.text}</span>
+                <span class="owner" style:color={item.ownerNick ? agentColor(item.ownerNick) : null}>
+                  {item.ownerNick ?? 'unowned'}
+                </span>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    {#if plan.items.length > 0}
+      <div class="acks">
+        <span class="ack-count">agreed {acked.size} / {agents.length}</span>
+        {#each agents as agent}
+          <span class="chip" class:yes={acked.has(agent.nick)}>
+            {agent.nick.split('-').slice(1).join('-')}
+          </span>
+        {/each}
+      </div>
+    {/if}
+  </aside>
+
+  <main class="center">
+    <div class="feed" bind:this={feedEl}>
+      {#each events as event (event.id)}
+        {#if mode(event.kind) === 'message'}
+          <div class="bubble" style:border-left-color={agentColor(event.nick)}>
+            <span class="bubble-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
+            <span class="bubble-body">{describe(event)}</span>
+            <span class="bubble-time">{time(event.createdAt)}</span>
+          </div>
+        {:else if mode(event.kind) === 'alert'}
+          <div class="alert">
+            <span class="alert-dot"></span>
+            <span class="alert-label">{alertLabel(event)}</span>
+            <span class="alert-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
+            <span class="alert-text">{describe(event)}</span>
+            <span class="alert-time">{time(event.createdAt)}</span>
+          </div>
+        {:else}
+          <div class="service">
+            <span class="svc-time">{time(event.createdAt)}</span>
+            <span class="svc-nick" style:color={agentColor(event.nick)}>{event.nick ?? 'system'}</span>
+            <span class="svc-text">{describe(event)}</span>
+          </div>
+        {/if}
+      {:else}
+        <p class="empty">nothing has happened yet</p>
+      {/each}
+    </div>
+    <div class="foot">the feed only shows — agents write through the CLI and MCP</div>
+  </main>
+
+  <aside class="right">
+    <div class="tree-head">
+      <h2 class="label">tree</h2>
+      <span class="tree-stats">{treeStats}</span>
+    </div>
+    <div class="tree-rows">
+      {#if tree.length === 0}
+        <p class="empty">tree is empty — no snapshots from agents yet</p>
+      {:else}
+        <Tree nodes={tree} />
+      {/if}
+    </div>
+    <div class="legend">
+      <span>colour — holder</span>
+      <span>dimmed — inherited</span>
+      <span class="ital">italic — untracked</span>
+    </div>
+  </aside>
+</div>
+{/if}
+
+<style>
+  @import './fonts.css';
+
+  :global(html),
+  :global(body) {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  :global(body) {
+    background: #17181b;
+    color: #d5d7dc;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+
+  :global(#app) {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 44px 1fr;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 16px;
+    background: #131417;
+    border-bottom: 1px solid #23252b;
+  }
+
+  .wordmark {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: #d5d7dc;
+  }
+
+  .tick {
+    width: 1px;
+    height: 16px;
+    background: #2b2e35;
+  }
+
+  .room {
+    font-size: 13px;
+    color: #9aa1ad;
+  }
+
+  .conn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    font-size: 12px;
+    color: #6f757f;
+  }
+
+  .conn-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4cae72;
+  }
+
+  .conn.lost .conn-dot {
+    background: #e0554f;
+  }
+
+  .readonly {
+    font-size: 12px;
+    color: #565c66;
+  }
+
+  .body {
+    display: grid;
+    grid-template-columns: 300px 1fr 380px;
+    min-height: 0;
+  }
+
+  /* ── left: agents and plan ───────────────────────────────────────────── */
+
+  .left {
+    background: #141518;
+    border-right: 1px solid #23252b;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #616772;
+    font-weight: 400;
+    margin: 0;
+  }
+
+  .agents-label {
+    padding: 14px 16px 10px;
+  }
+
+  .plan-label {
+    padding: 22px 16px 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .rev {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: #4a5058;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .agent {
+    display: grid;
+    grid-template-columns: 3px 1fr;
+    gap: 11px;
+    padding: 7px 16px 7px 0;
+  }
+
+  .agent.offline {
+    opacity: 0.45;
+  }
+
+  /* The colour key: the same hue identifies this agent in the tree and feed. */
+  .key {
+    border-radius: 0 2px 2px 0;
+  }
+
+  .agent-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .nick {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+  }
+
+  .desc {
+    font-size: 12px;
+    color: #767c87;
+  }
+
+  .meta {
+    font-size: 11px;
+    color: #5c626c;
+  }
+
+  /* This agent can walk into a claimed file and nothing stops it — the team
+     should see that without asking. */
+  .meta.unprotected {
+    color: #d3a24c;
+  }
+
+  .meta.doing {
+    color: #767c87;
+  }
+
+  .plan {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 16px;
+  }
+
+  .item {
+    display: grid;
+    grid-template-columns: 7px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 5px 0;
+  }
+
+  .square {
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    margin-top: 6px;
+  }
+
+  .square.doing {
+    background: #d3a24c;
+  }
+
+  .square.done {
+    background: #3f7a55;
+  }
+
+  .square.todo {
+    background: #3b3f47;
+  }
+
+  .square.blocked {
+    background: #e0554f;
+  }
+
+  .item-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .text {
+    font-size: 13px;
+    line-height: 1.35;
+    color: #c8ccd3;
+  }
+
+  .text.done {
+    color: #5c626c;
+    text-decoration: line-through;
+  }
+
+  .owner {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: #4a5058;
+  }
+
+  .acks {
+    margin-top: 14px;
+    padding: 10px 16px;
+    border-top: 1px solid #202228;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .ack-count {
+    font-size: 11px;
+    color: #616772;
+  }
+
+  .chip {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #5c626c;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .chip.yes {
+    color: #7fc39a;
+    background: rgba(76, 174, 114, 0.12);
+  }
+
+  /* ── center: the feed ────────────────────────────────────────────────── */
+
+  .center {
+    background: #17181b;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .foot {
+    padding: 10px 24px;
+    border-top: 1px solid #23252b;
+    background: #141518;
+    font-size: 12px;
+    color: #4a5058;
+  }
+
+  .bubble {
+    max-width: 620px;
+    margin: 7px 0;
+    padding: 9px 13px 8px;
+    background: #202329;
+    border-radius: 3px 12px 12px 12px;
+    border-left: 2px solid;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .bubble-nick {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+
+  .bubble-body {
+    font-size: 14px;
+    line-height: 1.45;
+    color: #d9dbe0;
+  }
+
+  .bubble-time {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: #5c626c;
+    align-self: flex-end;
+    margin-top: -2px;
+  }
+
+  .service {
+    padding: 3px 0 3px 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+
+  .svc-time {
+    color: #4a5058;
+  }
+
+  .svc-nick {
+    opacity: 0.85;
+  }
+
+  .svc-text {
+    color: #6b717b;
+  }
+
+  /* A collision has to be visible without reading — that is the whole point. */
+  .alert {
+    width: 100%;
+    margin: 7px 0;
+    padding: 10px 14px;
+    background: rgba(224, 85, 79, 0.13);
+    border-left: 3px solid #e0554f;
+    border-radius: 0 6px 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    box-sizing: border-box;
+  }
+
+  .alert-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e0554f;
+    flex: none;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .alert-dot {
+      animation: none;
+    }
+  }
+
+  .alert-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: #e0554f;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    flex: none;
+  }
+
+  .alert-nick {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    flex: none;
+  }
+
+  .alert-text {
+    font-size: 13px;
+    color: #efb9b6;
+  }
+
+  .alert-time {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: #8c6e6c;
+    margin-left: auto;
+    flex: none;
+  }
+
+  /* ── right: the tree ─────────────────────────────────────────────────── */
+
+  .right {
+    background: #141518;
+    border-left: 1px solid #23252b;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .tree-head {
+    padding: 14px 16px 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .tree-stats {
+    font-size: 11px;
+    color: #4a5058;
+  }
+
+  .tree-rows {
+    padding: 0 12px 14px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .legend {
+    margin-top: auto;
+    padding: 10px 16px;
+    border-top: 1px solid #202228;
+    display: flex;
+    gap: 14px;
+    font-size: 11px;
+    color: #565c66;
+  }
+
+  .legend .ital {
+    font-style: italic;
+  }
+
+  .denied {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #9aa1ad;
+    font-size: 14px;
+  }
+
+  .denied .hint {
+    color: #565c66;
+    font-size: 12px;
+  }
+
+  .empty {
+    color: #4a5058;
+    font-size: 12px;
+    padding: 0 16px;
+  }
+
+  /* Below this width the tree is no longer readable at 380px; the brief calls
+     for dropping the column rather than squeezing it. */
+  @media (max-width: 1100px) {
+    .body {
+      grid-template-columns: 300px 1fr;
+    }
+
+    .right {
+      display: none;
+    }
+  }
+</style>
