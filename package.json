@@ -1,0 +1,23 @@
+{
+  "name": "vibegram",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "hub": "node packages/hub/src/index.ts",
+    "smoke": "node packages/hub/test/smoke.ts",
+    "seed": "node packages/hub/test/seed.ts",
+    "web": "npm run build -w @vibegram/web",
+    "web:dev": "npm run dev -w @vibegram/web",
+    "test:web": "node --conditions=browser packages/web/test/render.js",
+    "test:shell": "node packages/client/test/shell.ts",
+    "test:load": "node packages/hub/test/load.ts",
+    "test": "npm run smoke && npm run test:shell && npm run test:load && npm run test:web",
+    "snapshot": "node --conditions=browser packages/web/test/snapshot.js"
+  }
+}

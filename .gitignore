@@ -1,0 +1,13 @@
+.tmp/
+dist/
+node_modules/
+data/
+snapshot.html
+.Rhistory
+.claude/
+.codex/
+.mcp.json
+PLAN.md
+DESIGN-BRIEF.md
+design/
+*.zip
