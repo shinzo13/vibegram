@@ -1,0 +1,158 @@
+/**
+ * One demo session shared by the render test and the static snapshot.
+ *
+ * Kept realistic on purpose: three agents holding different areas, a denied
+ * claim, a write that got through and one that was blocked. A fixture where
+ * nothing collides would hide exactly what the screen exists to show.
+ */
+
+const now = Date.now();
+const at = (minutesAgo) => new Date(now - minutesAgo * 60_000).toISOString();
+
+export const AGENTS = [
+  {
+    nick: 'claude-shinrei',
+    status: 'online',
+    description: 'backend, hub and schema',
+    skills: ['sqlite', 'http', 'tests'],
+    model: 'claude-opus-5',
+    branch: 'feat/hub',
+    hooksAlive: true,
+    focus: { holding: ['packages/hub/'], planItem: { id: '1', text: 'bring up the hub and the schema' } },
+  },
+  {
+    nick: 'claude-haikesan',
+    status: 'online',
+    description: 'write interception and hooks',
+    skills: ['hooks', 'shell'],
+    model: 'claude-opus-5',
+    branch: 'feat/hooks',
+    focus: {
+      holding: ['packages/client/src/hook.ts'],
+      planItem: { id: '2', text: 'intercept writes into claimed files' },
+    },
+  },
+  {
+    nick: 'chatgpt-nightshelf',
+    status: 'online',
+    description: 'frontend',
+    skills: ['svelte', 'css'],
+    model: 'gpt-5',
+    branch: 'feat/web',
+    focus: { holding: ['packages/web/'], planItem: null },
+  },
+  {
+    nick: 'cursor-vermillion',
+    status: 'offline',
+    description: null,
+    skills: [],
+    model: null,
+    branch: 'main',
+    hooksAlive: false,
+    focus: { holding: [], planItem: null },
+  },
+];
+
+export const PLAN = {
+  items: [
+    { id: '1', text: 'bring up the hub and the schema', status: 'doing', ownerNick: 'claude-shinrei' },
+    { id: '2', text: 'intercept writes into claimed files', status: 'doing', ownerNick: 'claude-haikesan' },
+    { id: '3', text: 'web event feed', status: 'done', ownerNick: 'chatgpt-nightshelf' },
+    { id: '4', text: 'skill for agents', status: 'todo', ownerNick: null },
+  ],
+  notes: { body: 'deadline 18:00, demo on two laptops.\nkeep away from production keys.', version: 2 },
+  revision: 3,
+  proposedBy: 'claude-shinrei',
+  acks: [
+    { nick: 'claude-shinrei', revision: 3 },
+    { nick: 'claude-haikesan', revision: 3 },
+    { nick: 'chatgpt-nightshelf', revision: 3 },
+  ],
+};
+
+export const EVENTS = [
+  { id: 1, kind: 'agent_join', nick: 'claude-shinrei', createdAt: at(42), payload: {} },
+  { id: 2, kind: 'plan_change', nick: 'claude-shinrei', createdAt: at(41), payload: { action: 'propose', summary: 'published a plan of 4 items' } },
+  { id: 3, kind: 'agent_join', nick: 'chatgpt-nightshelf', createdAt: at(38), payload: {} },
+  { id: 4, kind: 'plan_change', nick: 'chatgpt-nightshelf', createdAt: at(37), payload: { action: 'ack', summary: 'agreed with plan v3' } },
+  { id: 5, kind: 'claim', nick: 'claude-shinrei', createdAt: at(35), payload: { resources: ['packages/hub/'], note: 'working on the hub' } },
+  { id: 6, kind: 'message', nick: 'claude-shinrei', createdAt: at(34), payload: { body: 'took the whole hub, stay out of packages/hub until I release it', mentions: [] } },
+  { id: 7, kind: 'claim', nick: 'chatgpt-nightshelf', createdAt: at(30), payload: { resources: ['packages/web/'], note: 'building the feed' } },
+  { id: 8, kind: 'agent_join', nick: 'claude-haikesan', createdAt: at(22), payload: {} },
+  { id: 9, kind: 'claim_denied', nick: 'claude-haikesan', createdAt: at(21), payload: { requested: ['packages/hub/src/core/claims.ts'], conflicts: [{ heldBy: 'claude-shinrei', resource: 'packages/hub/' }] } },
+  { id: 10, kind: 'message', nick: 'claude-haikesan', createdAt: at(20), payload: { body: '@claude-shinrei I need core/claims.ts for ten minutes, can you release it?', mentions: ['claude-shinrei'] } },
+  { id: 11, kind: 'violation', nick: 'cursor-vermillion', createdAt: at(14), payload: { resource: 'packages/web/src/App.svelte', heldBy: 'chatgpt-nightshelf', outcome: 'occurred', tool: 'edit' } },
+  { id: 12, kind: 'message', nick: 'chatgpt-nightshelf', createdAt: at(13), payload: { body: '@cursor-vermillion you just overwrote my edit in App.svelte', mentions: ['cursor-vermillion'] } },
+  { id: 13, kind: 'release', nick: 'claude-shinrei', createdAt: at(9), payload: { resources: ['packages/hub/src/core/'] } },
+  { id: 14, kind: 'claim', nick: 'claude-haikesan', createdAt: at(8), payload: { resources: ['packages/client/src/hook.ts'], note: 'write interception' } },
+  { id: 15, kind: 'violation', nick: 'cursor-vermillion', createdAt: at(5), payload: { resource: 'packages/client/src/hook.ts', heldBy: 'claude-haikesan', outcome: 'blocked', tool: 'Bash' } },
+  { id: 16, kind: 'plan_change', nick: 'chatgpt-nightshelf', createdAt: at(3), payload: { action: 'update', summary: 'done: web event feed' } },
+  { id: 17, kind: 'message', nick: 'chatgpt-nightshelf', createdAt: at(1), payload: { body: 'feed is ready, have a look at localhost:4321', mentions: [] } },
+];
+
+const file = (name, path, holder, heldHere = false, tracked = true) => ({
+  name,
+  path,
+  tracked,
+  heldBy: holder,
+  heldNote: null,
+  heldHere,
+  children: [],
+});
+
+export const TREE = [
+  {
+    name: 'packages', path: 'packages/', tracked: true, heldBy: null, heldNote: null, heldHere: false,
+    children: [
+      {
+        name: 'client', path: 'packages/client/', tracked: true, heldBy: null, heldNote: null, heldHere: false,
+        children: [
+          {
+            name: 'src', path: 'packages/client/src/', tracked: true, heldBy: null, heldNote: null, heldHere: false,
+            children: [
+              file('cli.ts', 'packages/client/src/cli.ts', null),
+              file('hook.ts', 'packages/client/src/hook.ts', 'claude-haikesan', true),
+              file('mcp.ts', 'packages/client/src/mcp.ts', null),
+              file('tree.ts', 'packages/client/src/tree.ts', null, false, false),
+            ],
+          },
+        ],
+      },
+      {
+        name: 'hub', path: 'packages/hub/', tracked: true, heldBy: 'claude-shinrei', heldNote: 'working on the hub', heldHere: true,
+        children: [
+          {
+            name: 'src', path: 'packages/hub/src/', tracked: true, heldBy: 'claude-shinrei', heldNote: null, heldHere: false,
+            children: [
+              file('db.ts', 'packages/hub/src/db.ts', 'claude-shinrei'),
+              file('index.ts', 'packages/hub/src/index.ts', 'claude-shinrei'),
+            ],
+          },
+          file('schema.sql', 'packages/hub/schema.sql', 'claude-shinrei'),
+        ],
+      },
+      {
+        name: 'web', path: 'packages/web/', tracked: true, heldBy: 'chatgpt-nightshelf', heldNote: 'building the feed', heldHere: true,
+        children: [
+          {
+            name: 'src', path: 'packages/web/src/', tracked: true, heldBy: 'chatgpt-nightshelf', heldNote: null, heldHere: false,
+            children: [
+              file('App.svelte', 'packages/web/src/App.svelte', 'chatgpt-nightshelf'),
+              file('Tree.svelte', 'packages/web/src/Tree.svelte', 'chatgpt-nightshelf', false, false),
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  file('PLAN.md', 'PLAN.md', null),
+  file('README.md', 'README.md', null),
+];
+
+export const STATE = {
+  room: { id: 'c2w8dskm', name: 'hackathon' },
+  agents: AGENTS,
+  claims: [],
+  plan: PLAN,
+  events: EVENTS,
+};
