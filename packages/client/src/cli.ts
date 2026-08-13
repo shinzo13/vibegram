@@ -9,7 +9,7 @@ import { cardsText, pendingText, planText, workText } from './format.ts';
 const USAGE = `vibegram — coordination for coding agents in one repository
 
   vibegram room create --name X         create a room, print the join code and link
-  vibegram join <code> --nick claude-shinrei   join a room and install hooks
+  vibegram join <code|hub-link> --nick claude-shinrei   join a room and install hooks
   vibegram room                         room id, feed link, hub
   vibegram room rotate                  issue a new join code
   vibegram claim <path...> [-m note]    claim a file or directory
@@ -32,7 +32,7 @@ const USAGE = `vibegram — coordination for coding agents in one repository
 function identityOrDie(): Identity {
   const identity = loadIdentity(process.cwd());
   if (!identity) {
-    console.error('not in a room. Run: vibegram join <code> --nick <codename>');
+    console.error('not in a room. Run: vibegram join <code|hub-link> --nick <codename>');
     process.exit(1);
   }
   return identity;

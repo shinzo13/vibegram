@@ -218,7 +218,7 @@ function installEverything(root: string): DetectedAgent[] {
 async function askNick(): Promise<string> {
   if (!process.stdin.isTTY) {
     throw new Error(
-      'no codename given. Run: vibegram join <code> --nick claude-shinrei\n' +
+      'no codename given. Run: vibegram join <code|hub-link> --nick claude-shinrei\n' +
         '(the human picks the name; an agent must not invent one for itself)',
     );
   }
@@ -253,7 +253,7 @@ export async function runRoomCreate(argv: string[]): Promise<void> {
   console.log(`  join code:  ${joinCode}`);
   console.log(`  feed link:  ${hub}/r/${room.viewToken}\n`);
   console.log('Pass the join code to your team — it lets an agent in:');
-  console.log(`  vibegram join ${joinCode} --nick <codename>${hub === DEFAULT_HUB ? '' : ` --hub ${hub}`}\n`);
+  console.log(`  vibegram join ${hub.replace(/\/+$/, '')}/${joinCode} --nick <codename>\n`);
   console.log('The feed link is read-only and safe to show anywhere.');
   console.log('If the code leaks, issue a new one: vibegram room rotate');
 }
@@ -273,11 +273,53 @@ function firstPositional(argv: string[], from: number): string | null {
   return null;
 }
 
-export async function runJoin(argv: string[]): Promise<void> {
-  const joinCode = firstPositional(argv, 1);
-  if (!joinCode) throw new Error('a join code is required: vibegram join <code> --nick <codename>');
+/** The same alphabet the hub issues codes from, in the same 4-4 shape. */
+const JOIN_CODE = /^[abcdefghjkmnpqrstuvwxyz23456789]{4}-[abcdefghjkmnpqrstuvwxyz23456789]{4}$/;
 
-  const hub = flagValue(argv, '--hub') ?? DEFAULT_HUB;
+/**
+ * A join target is either a bare code or the hub link with the code on the end:
+ * one string is what actually gets pasted into a chat, and demanding that the
+ * human split it back into `<code> --hub <url>` is how a join goes to the wrong
+ * hub without anyone noticing.
+ */
+export function parseJoinTarget(value: string): { code: string; hub: string | null } {
+  if (JOIN_CODE.test(value)) return { code: value, hub: null };
+
+  if (!value.includes('/')) {
+    throw new Error(`"${value}" is neither a join code (like p94q-vney) nor a hub link`);
+  }
+
+  let url: URL;
+  try {
+    url = new URL(/^[a-z]+:\/\//i.test(value) ? value : `https://${value}`);
+  } catch {
+    throw new Error(`"${value}" is not a valid hub link`);
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  const code = segments.pop() ?? '';
+  if (!JOIN_CODE.test(code)) {
+    throw new Error(`no join code at the end of ${value} — it should look like https://hub.example/p94q-vney`);
+  }
+
+  const path = segments.length > 0 ? `/${segments.join('/')}` : '';
+  return { code, hub: `${url.origin}${path}` };
+}
+
+export async function runJoin(argv: string[]): Promise<void> {
+  const target = firstPositional(argv, 1);
+  if (!target) {
+    throw new Error('a join code is required: vibegram join <code|hub-link> --nick <codename>');
+  }
+  const { code: joinCode, hub: hubFromLink } = parseJoinTarget(target);
+
+  const hubFlag = flagValue(argv, '--hub');
+  // Two different hubs in one command is a mistake worth stopping on: guessing
+  // which one was meant lands the agent in someone else's room.
+  if (hubFlag && hubFromLink && hubFlag.replace(/\/+$/, '') !== hubFromLink) {
+    throw new Error(`the link points at ${hubFromLink}, but --hub says ${hubFlag} — leave one of them`);
+  }
+  const hub = hubFlag ?? hubFromLink ?? DEFAULT_HUB;
   const cwd = process.cwd();
   const root = repoRoot(cwd);
 
