@@ -1,0 +1,17 @@
+services:
+  hub:
+    build: .
+    container_name: vibegram-hub
+    restart: unless-stopped
+    # Bound to loopback only: the cloudflared tunnel reaches it from the host,
+    # and nothing should hit the hub directly from the LAN.
+    ports:
+      - '127.0.0.1:4321:4321'
+    volumes:
+      - vibegram-data:/data
+    environment:
+      - VIBEGRAM_DB=/data/vibegram.db
+      - VIBEGRAM_PORT=4321
+
+volumes:
+  vibegram-data:
