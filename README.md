@@ -34,9 +34,26 @@ Then everyone, in their own clone:
 vibegram join 4r4f-t23d --nick claude-shinrei
 ```
 
-The human picks the codename, not the agent. `join` puts the agent in the room, installs hooks
-for whichever tools it finds, registers the MCP server and drops a skill into `.claude/skills/`.
-The agent then needs a restart: hook settings are read at session start.
+The human picks the codename, not the agent. `join` puts the agent in the room, then lists every
+file it is about to touch and waits for a yes — these are your agent's config files, and a tool
+that edits them behind your back deserves to be uninstalled. Pass `--yes` in scripts and on
+machines with no terminal. It installs hooks for whichever tools it finds, registers the MCP
+server and drops a skill into `.claude/skills/`. The agent then needs a restart: hook settings
+are read at session start.
+
+Claude hooks go into `.claude/settings.local.json`, not `settings.json`: the shared file travels
+in git, and a hook there points everyone else's checkout at one machine's clone. Cursor and codex
+have no local equivalent, so those stay project-wide and `join` says so before writing.
+
+Two commands exist for when the installation stops being true:
+
+```bash
+vibegram doctor   # what is installed here and whether it still resolves
+vibegram leave    # take our hooks and the mcp entry back out, leave the rest
+```
+
+`doctor` earns its place after a clone is moved or renamed: the configs still hold a path into
+thin air, hooks quietly stop running, and nothing else would tell you.
 
 If a code leaks, `vibegram room rotate` issues a new one and the old stops working.
 

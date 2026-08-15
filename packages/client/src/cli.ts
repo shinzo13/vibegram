@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import * as api from './api.ts';
-import { collectPaths, currentBranch, loadIdentity, type Identity } from './config.ts';
+import { collectPaths, currentBranch, loadIdentity, repoRoot, type Identity } from './config.ts';
 import { hookMain } from './hook.ts';
 import { mcpMain } from './mcp.ts';
-import { runJoin, runRoomCreate } from './init.ts';
+import { inspectHooks, runJoin, runLeave, runRoomCreate } from './init.ts';
 import { cardsText, pendingText, planText, workText } from './format.ts';
 
 const USAGE = `vibegram — coordination for coding agents in one repository
 
   vibegram room create --name X         create a room, print the join code and link
   vibegram join <code|hub-link> --nick claude-shinrei   join a room and install hooks
+  vibegram doctor                       what is installed and whether it still works
+  vibegram leave                        remove the hooks and the mcp entry again
   vibegram room                         room id, feed link, hub
   vibegram room rotate                  issue a new join code
   vibegram claim <path...> [-m note]    claim a file or directory
@@ -74,6 +76,55 @@ async function main(): Promise<void> {
 
     case 'join':
       return runJoin(argv);
+
+    case 'doctor': {
+      const root = repoRoot(process.cwd());
+      const identity = loadIdentity(process.cwd());
+      console.log(identity ? `room ${identity.roomId} as ${identity.nick}` : 'not in a room');
+      console.log(`repo: ${root}`);
+      if (identity && identity.root !== root) {
+        console.log(`! identity belongs to ${identity.root} — this is a different working copy`);
+      }
+
+      const health = inspectHooks(root);
+      let broken = 0;
+      let legacy = 0;
+      for (const entry of health.filter((h) => h.installed)) {
+        const shared = entry.sharedWithTeam ? ' (shared with the team)' : '';
+        console.log(`  ${entry.dialect}: ${entry.command}${entry.resolves ? '' : ' — DOES NOT RESOLVE'}${shared}`);
+        console.log(`    in ${entry.path}`);
+        if (!entry.resolves) broken += 1;
+        if (entry.legacy) legacy += 1;
+      }
+      if (health.every((h) => !h.installed)) {
+        console.log('  no hooks installed here — writes are not intercepted');
+      }
+      if (legacy > 0) {
+        console.log('\nhooks sit in a file that travels in git — "vibegram join <code> --yes" moves them to the local one');
+      }
+      if (broken > 0) {
+        console.log('\nthe clone was probably moved. Repair with: vibegram join <code> --yes');
+        process.exit(2);
+      }
+      // Hooks in the repository are only read when the agent runs from it.
+      if (identity && process.cwd() !== root) {
+        console.log(`\nnote: running from ${process.cwd()}, hooks live in ${root}`);
+      }
+      return;
+    }
+
+    case 'leave': {
+      const root = repoRoot(process.cwd());
+      const identity = loadIdentity(process.cwd());
+      if (identity) {
+        await api.release(identity).catch(() => undefined);
+        await api.message(identity, 'leaving the room, hooks removed').catch(() => undefined);
+      }
+      const touched = runLeave(root);
+      console.log(touched.length > 0 ? `cleaned: ${touched.join(', ')}` : 'nothing of ours was installed here');
+      console.log('the identity in ~/.vibegram/config.json is kept — "vibegram join" reinstalls without a new code');
+      return;
+    }
 
     case 'room': {
       const sub = argv[1];

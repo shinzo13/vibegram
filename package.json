@@ -17,8 +17,9 @@
     "test:web": "node --conditions=browser packages/web/test/render.js",
     "test:shell": "node packages/client/test/shell.ts",
     "test:join": "node packages/client/test/join-target.ts",
+    "test:install": "node packages/client/test/install.ts",
     "test:load": "node packages/hub/test/load.ts",
-    "test": "npm run smoke && npm run test:shell && npm run test:join && npm run test:load && npm run test:web",
+    "test": "npm run smoke && npm run test:shell && npm run test:join && npm run test:install && npm run test:load && npm run test:web",
     "snapshot": "node --conditions=browser packages/web/test/snapshot.js"
   }
 }

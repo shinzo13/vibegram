@@ -11,6 +11,8 @@ import {
   collectPaths,
   currentBranch,
   ensureDirFor,
+  isSharedWithTeam,
+  legacySettingsPathFor,
   loadIdentity,
   repoFingerprint,
   repoRoot,
@@ -21,9 +23,30 @@ import {
 
 const CLI_ENTRY = resolve(fileURLToPath(import.meta.url), '../cli.ts');
 
-/** The hook command uses an absolute path so it does not depend on an npm install. */
-function hookCommand(dialect: string): string {
-  return `node ${CLI_ENTRY} hook --dialect ${dialect}`;
+/**
+ * Prefers the launcher on PATH over the absolute path to this clone.
+ *
+ * Both work, but they rot differently: `vibegram` keeps the path to the clone
+ * in one file that a single command rewrites, while an absolute path gets
+ * copied into the config of every repository and dies silently the moment the
+ * clone is moved. Without a launcher the absolute path is still correct — it is
+ * the fallback, not the default.
+ */
+export function hookCommand(dialect: string, launcherAvailable = inPath('vibegram')): string {
+  return launcherAvailable
+    ? `vibegram hook --dialect ${dialect}`
+    : `node ${CLI_ENTRY} hook --dialect ${dialect}`;
+}
+
+/**
+ * Recognises our own entries in someone else's config.
+ *
+ * Matching on the word "vibegram" was wrong: a clone in ~/work/vg produces a
+ * command with no such word, so our own filter stopped seeing our own hooks and
+ * a second join duplicated them. The invocation itself is the marker.
+ */
+export function ownsCommand(command: string | undefined): boolean {
+  return /(^|[\s/])vibegram(\s|$)|cli\.ts\s+hook\s+--dialect/.test(command ?? '');
 }
 
 export interface DetectedAgent {
@@ -62,7 +85,7 @@ interface HookEntry {
 }
 
 function isOurs(entry: HookEntry): boolean {
-  return entry.hooks?.some((h) => h.command?.includes('vibegram')) ?? false;
+  return entry.hooks?.some((h) => ownsCommand(h.command)) ?? false;
 }
 
 /**
@@ -103,6 +126,12 @@ export function installClaudeHooks(root: string): string {
 
   ensureDirFor(path);
   writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
+  // Older installs wrote into the shared settings.json; leaving them there would
+  // run the hook twice and keep a machine-specific path in the team's git
+  const shared = legacySettingsPathFor(root, 'claude');
+  if (shared && stripOurHooks(shared)) {
+    console.log(`  moved out of ${shared} — that file is shared with the team`);
+  }
   return path;
 }
 
@@ -116,7 +145,7 @@ export function installCursorHooks(root: string): string {
   config.hooks ??= {};
   // Cursor has no hook before a write, so we wedge into reads and the shell.
   for (const event of ['beforeReadFile', 'beforeShellExecution', 'afterFileEdit', 'sessionStart']) {
-    const existing = (config.hooks[event] ?? []).filter((h) => !h.command?.includes('vibegram'));
+    const existing = (config.hooks[event] ?? []).filter((h) => !ownsCommand(h.command));
     config.hooks[event] = [...existing, { command: hookCommand('cursor') }];
   }
 
@@ -133,11 +162,66 @@ export function installCodexHooks(root: string): string {
 
   config.hooks ??= {};
   for (const event of ['PreToolUse', 'PostToolUse']) {
-    const existing = (config.hooks[event] ?? []).filter((h) => !h.command?.includes('vibegram'));
+    const existing = (config.hooks[event] ?? []).filter((h) => !ownsCommand(h.command));
     config.hooks[event] = [...existing, { command: hookCommand('codex') }];
   }
 
   ensureDirFor(path);
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+  return path;
+}
+
+function readJson(path: string): Record<string, never> | null {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as Record<string, never>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes our hooks and leaves everything else exactly as it was, including a
+ * file that ends up with an empty hooks object: it may be the human's own file
+ * and deleting it is not ours to decide.
+ */
+export function stripOurHooks(path: string): boolean {
+  const config = readJson(path) as { hooks?: Record<string, unknown[]> } | null;
+  if (!config?.hooks) return false;
+
+  let removed = 0;
+  for (const [event, entries] of Object.entries(config.hooks)) {
+    const kept = (entries ?? []).filter((entry) => {
+      const owned =
+        typeof entry === 'object' && entry !== null && 'hooks' in entry
+          ? isOurs(entry as HookEntry)
+          : ownsCommand((entry as { command?: string }).command);
+      return !owned;
+    });
+    removed += (entries?.length ?? 0) - kept.length;
+    if (kept.length > 0) config.hooks[event] = kept;
+    else delete config.hooks[event];
+  }
+  if (removed === 0) return false;
+
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+  return true;
+}
+
+export function uninstallHooks(root: string, dialect: 'claude' | 'cursor' | 'codex'): string[] {
+  const paths = [settingsPathFor(root, dialect), legacySettingsPathFor(root, dialect)].filter(
+    (p): p is string => p !== null,
+  );
+  return paths.filter(stripOurHooks);
+}
+
+/** The mcp entry is ours alone, so it goes; other servers in the file stay. */
+export function uninstallMcpServer(root: string): string | null {
+  const path = resolve(root, '.mcp.json');
+  const config = readJson(path) as { mcpServers?: Record<string, unknown> } | null;
+  if (!config?.mcpServers?.vibegram) return null;
+
+  delete config.mcpServers.vibegram;
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
   return path;
 }
@@ -192,6 +276,41 @@ export function installSkill(root: string): string {
   ensureDirFor(target);
   writeFileSync(target, readFileSync(source, 'utf8'));
   return target;
+}
+
+/**
+ * Says what will be written before writing it, and waits for a yes.
+ *
+ * These are the agent's own config files. A tool that edits them without asking
+ * gets uninstalled the first time someone notices, and rightly so — consent is
+ * cheaper than trust rebuilt afterwards. Non-interactive callers pass --yes,
+ * which is a decision made once rather than a prompt nobody can answer.
+ */
+export async function confirmInstall(root: string, detected: DetectedAgent[], assumeYes: boolean): Promise<boolean> {
+  console.log('\nvibegram will write to:');
+  console.log(`  ${resolve(root, '.mcp.json')} — mcp server entry`);
+  for (const agent of detected) {
+    const shared = isSharedWithTeam(agent.dialect) ? ' (shared with the team, travels in git)' : '';
+    console.log(`  ${settingsPathFor(root, agent.dialect)} — ${agent.dialect} hooks${shared}`);
+  }
+  if (detected.some((d) => d.dialect === 'claude')) {
+    console.log(`  ${resolve(root, '.claude/skills/vibegram/SKILL.md')} — skill`);
+  }
+  console.log('Existing entries are kept; "vibegram leave" removes ours again.');
+
+  if (assumeYes) return true;
+  if (!process.stdin.isTTY) {
+    console.log('\nnot a terminal — rerun with --yes to install without asking');
+    return false;
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question('Continue? [y/N] ')).trim().toLowerCase();
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    rl.close();
+  }
 }
 
 /** Everything that goes into a working copy: hooks for detected agents, MCP and the skill. */
@@ -306,6 +425,93 @@ export function parseJoinTarget(value: string): { code: string; hub: string | nu
   return { code, hub: `${url.origin}${path}` };
 }
 
+/**
+ * Takes our hooks back out. Uninstalling has to be as easy as installing —
+ * a tool that can only be removed by hand-editing json is a tool people resent.
+ */
+export function runLeave(root: string): string[] {
+  const touched: string[] = [];
+  for (const dialect of ['claude', 'cursor', 'codex'] as const) {
+    touched.push(...uninstallHooks(root, dialect));
+  }
+  const mcp = uninstallMcpServer(root);
+  if (mcp) touched.push(mcp);
+  return touched;
+}
+
+export interface HookHealth {
+  dialect: 'claude' | 'cursor' | 'codex';
+  path: string;
+  installed: boolean;
+  command: string | null;
+  /** Whether that command can actually be run right now. */
+  resolves: boolean;
+  sharedWithTeam: boolean;
+  /** Installed by an older version into the file that travels in git. */
+  legacy: boolean;
+}
+
+function commandResolves(command: string): boolean {
+  const [bin, ...rest] = command.split(/\s+/);
+  if (bin === 'node') {
+    const script = rest[0];
+    return script !== undefined && existsSync(script);
+  }
+  return which(bin!);
+}
+
+/**
+ * What is actually installed, as opposed to what join once reported.
+ *
+ * The failure this exists for is silent: the clone gets moved, every config
+ * still holds a path into thin air, and the agent goes on writing to files
+ * other people hold while vibegram claims it is protected.
+ */
+export function inspectHooks(root: string): HookHealth[] {
+  const out: HookHealth[] = [];
+  for (const dialect of ['claude', 'cursor', 'codex'] as const) {
+    const current = settingsPathFor(root, dialect);
+    const legacy = legacySettingsPathFor(root, dialect);
+
+    // The legacy file is inspected too: an agent installed by an older version
+    // is protected, and reporting "not installed" would send it reinstalling
+    // over a working setup
+    for (const [path, isLegacy] of [[current, false], ...(legacy ? [[legacy, true]] : [])] as [string, boolean][]) {
+      const command = ourCommandsIn(path)[0] ?? null;
+      if (command === null && isLegacy) continue;
+      out.push({
+        dialect,
+        path,
+        installed: command !== null,
+        command,
+        resolves: command !== null && commandResolves(command),
+        sharedWithTeam: isLegacy || isSharedWithTeam(dialect),
+        legacy: isLegacy,
+      });
+    }
+  }
+  return out;
+}
+
+function ourCommandsIn(path: string): string[] {
+  const config = readJson(path) as { hooks?: Record<string, unknown[]> } | null;
+  const commands: string[] = [];
+
+  for (const entries of Object.values(config?.hooks ?? {})) {
+    for (const entry of entries ?? []) {
+      if (typeof entry === 'object' && entry !== null && 'hooks' in entry) {
+        for (const hook of (entry as HookEntry).hooks ?? []) {
+          if (ownsCommand(hook.command)) commands.push(hook.command);
+        }
+      } else {
+        const command = (entry as { command?: string }).command;
+        if (ownsCommand(command)) commands.push(command!);
+      }
+    }
+  }
+  return commands;
+}
+
 export async function runJoin(argv: string[]): Promise<void> {
   const target = firstPositional(argv, 1);
   if (!target) {
@@ -326,9 +532,12 @@ export async function runJoin(argv: string[]): Promise<void> {
   // Identity is keyed by the working copy, while hooks, MCP and the skill live
   // inside it. Re-running join in a fresh clone has to reinstall them, otherwise
   // the agent silently ends up with no integration at all.
+  const assumeYes = argv.includes('--yes') || argv.includes('-y');
+
   const existing = loadIdentity(cwd);
   if (existing) {
     console.log(`already in room ${existing.roomId} as ${existing.nick} — refreshing settings in this copy`);
+    if (!(await confirmInstall(root, detectAgents(root), assumeYes))) return;
     installEverything(root);
     return;
   }
@@ -347,7 +556,12 @@ export async function runJoin(argv: string[]): Promise<void> {
 
   const { token, room } = await api.joinRoom(hub, joinCode, nick, fingerprint);
 
-  const launcher = installLauncher();
+  // Asked after the join rather than before it: an agent in the room without
+  // hooks still coordinates by hand, while a refused join leaves nothing at all.
+  const detected = detectAgents(root);
+  const install = await confirmInstall(root, detected, assumeYes);
+
+  const launcher = install ? installLauncher() : null;
   // The command in every hint has to work, so the short name is used only when
   // it is genuinely available on PATH.
   const cli = launcher && inPath('vibegram') ? 'vibegram' : `node ${CLI_ENTRY}`;
@@ -381,7 +595,14 @@ export async function runJoin(argv: string[]): Promise<void> {
     .then((r) => console.log(`  tree: ${r.accepted} paths sent`))
     .catch(() => undefined);
 
-  const detected = installEverything(root);
+  if (!install) {
+    console.log('\nnothing was written. You are in the room and can coordinate by hand:');
+    console.log(`  ${cli} work    ${cli} claim <path>    ${cli} release`);
+    console.log(`Install the hooks later with: ${cli} join ${joinCode} --yes`);
+    return;
+  }
+
+  installEverything(root);
 
   if (detected.some((d) => d.dialect === 'codex')) {
     console.log(

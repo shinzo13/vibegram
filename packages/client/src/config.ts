@@ -175,10 +175,30 @@ export function logHook(entry: unknown): void {
   }
 }
 
+/**
+ * Where our hooks go.
+ *
+ * For claude that is settings.local.json, not settings.json: the latter is the
+ * team's file and lives in git, so writing there commits a hook pointing at one
+ * machine's clone into everyone else's checkout. The local file is personal and
+ * gitignored by default, which is exactly what an installation is.
+ *
+ * Cursor and codex have no local variant, so those stay project-wide — join
+ * says so out loud rather than pretending otherwise.
+ */
 export function settingsPathFor(root: string, dialect: 'claude' | 'cursor' | 'codex'): string {
-  if (dialect === 'claude') return resolve(root, '.claude/settings.json');
+  if (dialect === 'claude') return resolve(root, '.claude/settings.local.json');
   if (dialect === 'cursor') return resolve(root, '.cursor/hooks.json');
   return resolve(root, '.codex/hooks.json');
+}
+
+/** Earlier versions installed into the shared file; leave and join clean it up. */
+export function legacySettingsPathFor(root: string, dialect: 'claude' | 'cursor' | 'codex'): string | null {
+  return dialect === 'claude' ? resolve(root, '.claude/settings.json') : null;
+}
+
+export function isSharedWithTeam(dialect: 'claude' | 'cursor' | 'codex'): boolean {
+  return dialect !== 'claude';
 }
 
 export function ensureDirFor(path: string): void {
