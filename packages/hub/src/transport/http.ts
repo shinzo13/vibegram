@@ -1,4 +1,8 @@
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Agent, Event } from '../../../protocol/src/index.ts';
 import { PROTOCOL_VERSION, isRelativeResource } from '../../../protocol/src/index.ts';
 import * as core from '../core/index.ts';
@@ -480,6 +484,67 @@ function streamEvents(ctx: Ctx, roomId: string, res: ServerResponse): void {
   });
 }
 
+const INSTALLER = resolve(dirname(fileURLToPath(import.meta.url)), '../../public/install.sh');
+
+/** The address the caller actually used: behind the tunnel that is https, on a
+ * developer machine it is plain http, and guessing wrong hands out a command
+ * that fails to connect. */
+function publicOrigin(req: IncomingMessage): string {
+  const host = req.headers.host ?? 'localhost';
+  const forwarded = req.headers['x-forwarded-proto'];
+  const proto =
+    (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim() ??
+    (/^(localhost|127\.0\.0\.1|\[::1])(:|$)/.test(host) ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
+/**
+ * The installer names the hub that served it.
+ *
+ * Written this way round because the address is the one thing a copied command
+ * gets wrong: the script is fetched from the hub the team actually runs, so it
+ * can fill that in itself instead of asking the human to keep it in sync.
+ */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+
+/**
+ * The client, straight from the hub.
+ *
+ * Not a git clone: a private repository is the normal case, and an installer
+ * that needs repository access is an installer nobody outside the team can run.
+ * The hub already carries this code and everyone can reach the hub — so it
+ * hands out the two packages the client is made of and asks nothing of github.
+ */
+function sendClientArchive(res: ServerResponse): void {
+  const tar = spawn('tar', ['-czf', '-', '-C', REPO_ROOT, 'packages/client', 'packages/protocol']);
+
+  res.writeHead(200, {
+    'content-type': 'application/gzip',
+    'cache-control': 'no-cache',
+    'content-disposition': 'attachment; filename="vibegram-client.tar.gz"',
+  });
+  tar.stdout.pipe(res);
+  tar.on('error', (err) => {
+    console.error('[hub] client archive failed', err);
+    res.destroy();
+  });
+}
+
+function sendInstaller(res: ServerResponse, origin: string): void {
+  let script: string;
+  try {
+    script = readFileSync(INSTALLER, 'utf8');
+  } catch {
+    return send(res, 404, { error: 'not_found', message: 'installer is not bundled with this hub' });
+  }
+  const body = script.split('__HUB__').join(origin);
+  res.writeHead(200, {
+    'content-type': 'text/x-shellscript; charset=utf-8',
+    'cache-control': 'no-cache',
+  });
+  res.end(body);
+}
+
 export function createHttpServer(
   ctx: Ctx,
   serveStatic?: (req: IncomingMessage, res: ServerResponse) => boolean,
@@ -493,6 +558,14 @@ export function createHttpServer(
         const room = token ? core.roomByViewToken(ctx, token) : null;
         if (!room) return send(res, 404, { error: 'not_found' });
         return streamEvents(ctx, room.id, res);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/install.sh') {
+        return sendInstaller(res, publicOrigin(req));
+      }
+
+      if (req.method === 'GET' && url.pathname === '/client.tar.gz') {
+        return sendClientArchive(res);
       }
 
       const key = `${req.method} ${url.pathname}`;

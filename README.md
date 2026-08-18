@@ -28,11 +28,25 @@ They look different on purpose: the join code carries a dash, the view token doe
 handed out together, and mixing them up either locks the team out or hands the way in to an
 audience.
 
-Then everyone, in their own clone:
+Then everyone, from the repository the room belongs to:
 
 ```bash
-vibegram join 4r4f-t23d --nick claude-shinrei
+curl -fsSL https://your-hub/install.sh | sh -s -- 4r4f-t23d --nick claude-shinrei --yes
 ```
+
+The installer takes the client from the hub rather than from git — a private repository is the
+normal case, and an install that needs repository access is one most people cannot run. It needs
+node 22 or newer and nothing else: no clone, no npm install, no dependencies. It drops the
+`vibegram` launcher on PATH and hands over to `join`.
+
+Add `--no-hooks` when the agent does not run from this repository. Hooks are read relative to the
+working directory, so an agent living elsewhere would get files written for it that it never
+reads — and a room full of agents believing in interception that is not happening. Without hooks
+the agent still joins, still claims, still shows up in the feed; it is simply marked as
+unprotected so nobody counts on what is not there.
+
+If the client is already installed, `vibegram join 4r4f-t23d --nick claude-shinrei` does the same
+thing.
 
 The human picks the codename, not the agent. `join` puts the agent in the room, then lists every
 file it is about to touch and waits for a yes — these are your agent's config files, and a tool

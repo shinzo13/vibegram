@@ -286,16 +286,24 @@ export function installSkill(root: string): string {
  * cheaper than trust rebuilt afterwards. Non-interactive callers pass --yes,
  * which is a decision made once rather than a prompt nobody can answer.
  */
-export async function confirmInstall(root: string, detected: DetectedAgent[], assumeYes: boolean): Promise<boolean> {
+export async function confirmInstall(
+  root: string,
+  detected: DetectedAgent[],
+  assumeYes: boolean,
+  withHooks = true,
+): Promise<boolean> {
   console.log('\nvibegram will write to:');
   console.log(`  ${resolve(root, '.mcp.json')} — mcp server entry`);
-  for (const agent of detected) {
-    const shared = isSharedWithTeam(agent.dialect) ? ' (shared with the team, travels in git)' : '';
-    console.log(`  ${settingsPathFor(root, agent.dialect)} — ${agent.dialect} hooks${shared}`);
+  if (withHooks) {
+    for (const agent of detected) {
+      const shared = isSharedWithTeam(agent.dialect) ? ' (shared with the team, travels in git)' : '';
+      console.log(`  ${settingsPathFor(root, agent.dialect)} — ${agent.dialect} hooks${shared}`);
+    }
   }
   if (detected.some((d) => d.dialect === 'claude')) {
     console.log(`  ${resolve(root, '.claude/skills/vibegram/SKILL.md')} — skill`);
   }
+  if (!withHooks) console.log('  no hooks (--no-hooks): nothing will intercept writes');
   console.log('Existing entries are kept; "vibegram leave" removes ours again.');
 
   if (assumeYes) return true;
@@ -313,11 +321,25 @@ export async function confirmInstall(root: string, detected: DetectedAgent[], as
   }
 }
 
-/** Everything that goes into a working copy: hooks for detected agents, MCP and the skill. */
-function installEverything(root: string): DetectedAgent[] {
+/**
+ * Everything that goes into a working copy: hooks for detected agents, MCP and
+ * the skill.
+ *
+ * With hooks off it installs the rest and says plainly that writes are not
+ * intercepted. That combination is not a broken install — it is the only honest
+ * one for an agent whose working directory is not this repository, where hooks
+ * would be written and then never read. Better a tool that admits it is only
+ * advising than one that reports protection it does not provide.
+ */
+function installEverything(root: string, withHooks = true): DetectedAgent[] {
   console.log(`  mcp: ${installMcpServer(root)}`);
 
   const detected = detectAgents(root);
+  if (!withHooks) {
+    if (detected.some((d) => d.dialect === 'claude')) console.log(`  skill: ${installSkill(root)}`);
+    console.log('  hooks: skipped (--no-hooks) — writes are not intercepted, claim by hand');
+    return detected;
+  }
   if (detected.length === 0) console.log('! no agents detected — hooks not installed');
 
   for (const agent of detected) {
@@ -533,12 +555,15 @@ export async function runJoin(argv: string[]): Promise<void> {
   // inside it. Re-running join in a fresh clone has to reinstall them, otherwise
   // the agent silently ends up with no integration at all.
   const assumeYes = argv.includes('--yes') || argv.includes('-y');
+  // an agent that runs from somewhere else than this repository would get hooks
+  // written into files it never reads — joining without them is the honest setup
+  const withHooks = !argv.includes('--no-hooks');
 
   const existing = loadIdentity(cwd);
   if (existing) {
     console.log(`already in room ${existing.roomId} as ${existing.nick} — refreshing settings in this copy`);
-    if (!(await confirmInstall(root, detectAgents(root), assumeYes))) return;
-    installEverything(root);
+    if (!(await confirmInstall(root, detectAgents(root), assumeYes, withHooks))) return;
+    installEverything(root, withHooks);
     return;
   }
 
@@ -559,7 +584,7 @@ export async function runJoin(argv: string[]): Promise<void> {
   // Asked after the join rather than before it: an agent in the room without
   // hooks still coordinates by hand, while a refused join leaves nothing at all.
   const detected = detectAgents(root);
-  const install = await confirmInstall(root, detected, assumeYes);
+  const install = await confirmInstall(root, detected, assumeYes, withHooks);
 
   const launcher = install ? installLauncher() : null;
   // The command in every hint has to work, so the short name is used only when
@@ -602,7 +627,14 @@ export async function runJoin(argv: string[]): Promise<void> {
     return;
   }
 
-  installEverything(root);
+  installEverything(root, withHooks);
+
+  if (!withHooks) {
+    console.log('\njoined without hooks. Claim before you write and release when done:');
+    console.log(`  ${cli} work    ${cli} claim <path>    ${cli} release`);
+    console.log(`The room shows you as unprotected, so nobody counts on interception that is not there.`);
+    return;
+  }
 
   if (detected.some((d) => d.dialect === 'codex')) {
     console.log(

@@ -10,6 +10,7 @@ const USAGE = `vibegram — coordination for coding agents in one repository
 
   vibegram room create --name X         create a room, print the join code and link
   vibegram join <code|hub-link> --nick claude-shinrei   join a room and install hooks
+                                        --no-hooks: join without them, claim by hand
   vibegram doctor                       what is installed and whether it still works
   vibegram leave                        remove the hooks and the mcp entry again
   vibegram room                         room id, feed link, hub

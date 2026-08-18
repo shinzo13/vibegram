@@ -8,7 +8,7 @@
  *
  * Run: npm run test:install
  */
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -125,6 +125,17 @@ console.log('\n— nothing installed —');
   const root = tempRepo();
   check('reported as not installed', inspectHooks(root).every((h) => !h.installed));
   check('leave on a clean repo touches nothing', runLeave(root).length === 0);
+  rmSync(root, { recursive: true, force: true });
+}
+
+console.log('\n— joining without hooks —');
+{
+  const root = tempRepo();
+  installMcpServer(root);
+  // --no-hooks installs everything except interception: the mcp entry is there,
+  // the hooks are not, and doctor must not pretend otherwise
+  check('mcp entry is written', existsSync(resolve(root, '.mcp.json')));
+  check('no hooks are reported', inspectHooks(root).every((h) => !h.installed));
   rmSync(root, { recursive: true, force: true });
 }
 
