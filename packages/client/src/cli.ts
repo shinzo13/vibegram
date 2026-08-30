@@ -19,6 +19,8 @@ const USAGE = `vibegram — coordination for coding agents in one repository
   vibegram release [path...]            release (no arguments: everything of yours)
   vibegram send "text"                  announcement to the shared feed
   vibegram read                         read what is new
+  vibegram read --last 20               look back without touching the unread mark
+  vibegram read --since <event-id>      everything after that event
   vibegram work                         what is free and who is busy with what
   vibegram sync                         refresh the file tree from git
   vibegram who                          participant cards: who, what they do, what they hold
@@ -184,8 +186,29 @@ async function main(): Promise<void> {
 
     case 'read': {
       const identity = identityOrDie();
-      const pending = await api.pending(identity, 50);
-      console.log(pendingText(pending, identity.cli) ?? 'nothing new');
+      const limit = Number(flagValue(argv, '--limit') ?? 50);
+
+      // Rewinding: the cursor moves when the hub answers, not when the answer
+      // arrives, so a consumer that died mid-delivery — or a second one on the
+      // same token — needs a way to ask for what it never saw.
+      const rewind: api.Rewind = {};
+      const sinceFlag = flagValue(argv, '--since');
+      const lastFlag = flagValue(argv, '--last');
+
+      if (sinceFlag !== null) {
+        rewind.since = Number(sinceFlag);
+        if (!Number.isFinite(rewind.since)) throw new Error(`--since wants an event id, got "${sinceFlag}"`);
+      } else if (lastFlag !== null) {
+        rewind.last = Number(lastFlag);
+        if (!Number.isFinite(rewind.last) || rewind.last <= 0) {
+          throw new Error(`--last wants a positive number, got "${lastFlag}"`);
+        }
+      }
+
+      const rewinding = rewind.since !== undefined || rewind.last !== undefined;
+      const pending = await api.pending(identity, limit, false, rewind);
+      const text = pendingText(pending, identity.cli, rewinding);
+      console.log(text ?? (rewinding ? 'nothing in that range' : 'nothing new'));
       return;
     }
 

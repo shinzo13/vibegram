@@ -179,7 +179,22 @@ const routes: Record<string, Handler> = {
     const agent = requireAgent(req);
     core.heartbeat(req.ctx, agent.id);
     if (req.url.searchParams.get('source') === 'hook') core.markHooksAlive(req.ctx, agent.id);
-    return core.pendingFor(req.ctx, agent, Number(req.url.searchParams.get('limit') ?? 50));
+
+    const number = (name: string): number | undefined => {
+      const raw = req.url.searchParams.get(name);
+      if (raw === null) return undefined;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) throw new HttpError(400, 'bad_request', `${name} must be a number`);
+      return value;
+    };
+
+    return core.pendingFor(
+      req.ctx,
+      agent,
+      number('limit') ?? 50,
+      number('since'),
+      number('last'),
+    );
   },
 
   'POST /api/messages': (req) => {

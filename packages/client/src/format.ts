@@ -58,8 +58,15 @@ function eventLine(event: Event): string | null {
  * The digest mixed into an agent's context. Deliberately short: this is
  * background noticed in passing, not a document to read.
  */
-export function pendingText(pending: Pending, cli: string): string | null {
-  const lines = pending.events.map(eventLine).filter((l): l is string => l !== null);
+export function pendingText(pending: Pending, cli: string, rewinding = false): string | null {
+  // Event ids only when looking back: they are what a rewind takes as its
+  // starting point, and noise in the everyday digest.
+  const lines = pending.events
+    .map((e) => {
+      const line = eventLine(e);
+      return line === null ? null : rewinding ? `#${e.id} ${line}` : line;
+    })
+    .filter((l): l is string => l !== null);
 
   if (pending.planAckNeeded !== null) {
     lines.push(
@@ -69,11 +76,14 @@ export function pendingText(pending: Pending, cli: string): string | null {
   }
   if (lines.length === 0) return null;
 
-  const tail =
+  const skipped =
     pending.skipped > 0
       ? `\n(${pending.skipped} more ${pending.skipped === 1 ? 'event' : 'events'} not your concern)`
       : '';
-  return `[vibegram] ${lines.join('\n')}${tail}`;
+  // Said out loud, because a rewind that silently consumed the feed would be
+  // the very failure this exists to fix.
+  const untouched = rewinding ? `\n(history — your unread mark stays at #${pending.cursor})` : '';
+  return `[vibegram] ${lines.join('\n')}${skipped}${untouched}`;
 }
 
 /**

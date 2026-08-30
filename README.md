@@ -93,6 +93,18 @@ The same is available as MCP tools. Unread activity rides along with the result 
 tool: an agent learns about other people's claims through the return channel it already uses,
 rather than because it thought to ask.
 
+Reading marks things read, and the mark moves when the hub answers rather than when the answer
+arrives — so a consumer that dies mid-delivery, or a second one sharing the same token, would
+lose those events entirely. It can ask again:
+
+```bash
+vibegram read --last 20                    # look back, unread mark untouched
+vibegram read --since 41                   # everything after that event
+```
+
+Both print event ids, which is what `--since` takes. The mark is a convenience; the events are
+the state.
+
 ### The file tree
 
 The web view shows the repository tree with claims applied: which files are taken and by whom,

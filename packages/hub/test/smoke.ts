@@ -179,6 +179,30 @@ check('irrelevant events are filtered out', pending.body.skipped > 0, pending.bo
 const pendingAgain = await call('GET', '/api/pending', undefined, tokenB);
 check('the cursor moved', pendingAgain.body.events.length === 0, pendingAgain.body.events);
 
+// ─── rewinding ───────────────────────────────────────────────────────────────
+// The cursor advances when the hub answers, not when the answer arrives: a
+// consumer that dies mid-delivery, or a second one sharing the token, used to
+// lose those events with no way to ask again.
+
+const cursorAtRewind = pendingAgain.body.cursor;
+const rewound = await call('GET', '/api/pending?last=20', undefined, tokenB);
+check('history comes back after it was read', rewound.body.events.length > 0, rewound.body.events.length);
+check('rewinding leaves the unread mark alone', rewound.body.cursor === cursorAtRewind, rewound.body.cursor);
+
+const afterRewind = await call('GET', '/api/pending', undefined, tokenB);
+check('and the feed is still empty afterwards', afterRewind.body.events.length === 0, afterRewind.body.events);
+
+const firstId = (rewound.body.events as any[])[0].id;
+const sinceFirst = await call(`GET`, `/api/pending?since=${firstId}`, undefined, tokenB);
+check(
+  'since returns what follows that event',
+  (sinceFirst.body.events as any[]).every((e) => e.id > firstId),
+  (sinceFirst.body.events as any[]).map((e) => e.id),
+);
+
+const badSince = await call('GET', '/api/pending?since=nope', undefined, tokenB);
+check('a nonsense since is refused', badSince.status === 400, badSince.body);
+
 const pendingA = await call('GET', '/api/pending', undefined, tokenA);
 const kindsA = (pendingA.body.events as any[]).map((e) => e.kind);
 check('the holder sees that someone is waiting', kindsA.includes('claim_denied'), kindsA);

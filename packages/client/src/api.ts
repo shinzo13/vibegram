@@ -96,9 +96,27 @@ export function othersClaims(identity: Identity): Promise<{ claims: Claim[] }> {
   return call(identity, 'GET', '/api/claims', undefined, HOOK_TIMEOUT_MS);
 }
 
-export function pending(identity: Identity, limit = 30, fromHook = false): Promise<Pending> {
-  const source = fromHook ? '&source=hook' : '';
-  return call(identity, 'GET', `/api/pending?limit=${limit}${source}`, undefined, HOOK_TIMEOUT_MS);
+export interface Rewind {
+  /** Everything after this event id. */
+  since?: number;
+  /** Or simply the last N, wherever the feed happens to end. */
+  last?: number;
+}
+
+export function pending(
+  identity: Identity,
+  limit = 30,
+  fromHook = false,
+  rewind: Rewind = {},
+): Promise<Pending> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (rewind.since !== undefined) params.set('since', String(rewind.since));
+  if (rewind.last !== undefined) params.set('last', String(rewind.last));
+  // The hook flag marks this agent's interception as alive; a human rewinding
+  // history is not evidence of that.
+  if (fromHook) params.set('source', 'hook');
+
+  return call(identity, 'GET', `/api/pending?${params}`, undefined, HOOK_TIMEOUT_MS);
 }
 
 export function claim(

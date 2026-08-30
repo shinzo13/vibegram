@@ -69,6 +69,13 @@ export function postMessage(ctx: Ctx, agent: Agent, body: string): PostMessageRe
   return { ok: true, event };
 }
 
+export function feedHead(ctx: Ctx, roomId: string): number {
+  const row = ctx.db
+    .prepare('SELECT COALESCE(MAX(id), 0) AS head FROM events WHERE room_id = ?')
+    .get(roomId) as { head: number };
+  return row.head;
+}
+
 export function listEvents(ctx: Ctx, roomId: string, after = 0, limit = 200): Event[] {
   const rows = ctx.db
     .prepare(`${SELECT_EVENT_SQL} WHERE e.room_id = ? AND e.id > ? ORDER BY e.id LIMIT ?`)
@@ -118,15 +125,35 @@ function isRelevant(ctx: Ctx, agent: Agent, event: Event, myResources: string[])
  * Unread activity for an agent. The cursor moves to the end of the inspected
  * window, filtered items included — otherwise skipped events would be
  * re-examined forever.
+ *
+ * With `since` it reads history instead, and does not move the cursor. That
+ * exists because the cursor advances when the hub answers, not when the answer
+ * arrives: a consumer that dies mid-delivery — or a second consumer sharing the
+ * same token — used to lose those events for good, with no way to ask again.
+ * The cursor is now a convenience; the events remain the state.
  */
-export function pendingFor(ctx: Ctx, agent: Agent, limit = 50): Pending {
+export function pendingFor(ctx: Ctx, agent: Agent, limit = 50, since?: number, last?: number): Pending {
   const row = ctx.db
     .prepare('SELECT last_event_id FROM cursors WHERE agent_id = ?')
     .get(agent.id) as { last_event_id: number } | undefined;
   const cursor = row?.last_event_id ?? 0;
 
+  // Reading history leaves the cursor alone: the caller is looking back at what
+  // it already consumed, and moving the cursor backwards or forwards for that
+  // would make a second consumer lose its place.
+  const rewinding = since !== undefined || last !== undefined;
+  const from =
+    since !== undefined
+      ? Math.max(0, since)
+      : last !== undefined
+        // "the last N" is answered here rather than by the caller: only the hub
+        // knows where the feed ends, and asking first would be a second call
+        // that can disagree with this one
+        ? Math.max(0, feedHead(ctx, agent.roomId) - last)
+        : cursor;
+
   const ackNeeded = planAckNeeded(ctx, agent);
-  const window = listEvents(ctx, agent.roomId, cursor, limit);
+  const window = listEvents(ctx, agent.roomId, from, limit);
   if (window.length === 0) {
     return { events: [], cursor, skipped: 0, planAckNeeded: ackNeeded };
   }
@@ -143,6 +170,8 @@ export function pendingFor(ctx: Ctx, agent: Agent, limit = 50): Pending {
     if (isRelevant(ctx, agent, event, myResources)) events.push(event);
     else skipped += 1;
   }
+
+  if (rewinding) return { events, cursor, skipped, planAckNeeded: ackNeeded };
 
   const newCursor = window[window.length - 1]!.id;
   ctx.db.prepare('UPDATE cursors SET last_event_id = ? WHERE agent_id = ?').run(newCursor, agent.id);
