@@ -129,5 +129,21 @@ if (treeButton) {
   check('tapping a pane switches to it', html().includes('data-pane="tree"'), html().slice(0, 80));
 }
 
+// ── event ids ─────────────────────────────────────────────────────────────
+// The page is where a human catches up; the cli rewinds from an id. Without a
+// way to lift the id off the screen, the bridge between them is someone
+// retyping a number off a phone.
+
+const idButtons = [...view.dom.window.document.querySelectorAll('button.id')];
+check('every event offers its id', idButtons.length > 0, idButtons.length);
+check('the id is shown as it is typed into --since', idButtons[0]?.textContent.trim().startsWith('#'), idButtons[0]?.textContent);
+
+let copiedValue = null;
+view.dom.window.navigator.clipboard = { writeText: async (v) => { copiedValue = v; } };
+idButtons[0]?.click();
+await view.flush();
+check('tapping it copies the bare number', copiedValue !== null && /^\d+$/.test(copiedValue), copiedValue);
+check('and says so', view.html.includes('copied'), copiedValue);
+
 console.log(failures === 0 ? '\ninterface renders correctly' : `\nfailed: ${failures}`);
 process.exit(failures === 0 ? 0 : 1);

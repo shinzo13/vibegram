@@ -23,6 +23,30 @@
   // what people open the link for — the rest is a tap away.
   let pane = $state('feed');
 
+  // The id just copied, so the tap has some acknowledgement.
+  let copied = $state(null);
+
+  /**
+   * Hands an event id to the person reading.
+   *
+   * This page is where a human catches up, and the CLI takes an id to rewind
+   * from: `read --since <id>`. Without a way to lift the id off the screen the
+   * bridge between the two is someone retyping a number from a phone.
+   */
+  async function copyId(id) {
+    try {
+      await navigator.clipboard.writeText(String(id));
+    } catch {
+      // No clipboard permission, or an insecure origin. Selecting the number
+      // by hand still works, so this is not worth an error message.
+      return;
+    }
+    copied = id;
+    setTimeout(() => {
+      if (copied === id) copied = null;
+    }, 1200);
+  }
+
   const acked = $derived(
     new Set(plan.acks.filter((a) => a.revision === plan.revision).map((a) => a.nick)),
   );
@@ -122,6 +146,12 @@
   });
 </script>
 
+{#snippet idButton(id)}
+  <button class="id" class:copied={copied === id} onclick={() => copyId(id)} title="copy the event id">
+    {copied === id ? 'copied' : `#${id}`}
+  </button>
+{/snippet}
+
 <header>
   <span class="wordmark">vibegram</span>
   <span class="tick"></span>
@@ -209,7 +239,10 @@
           <div class="bubble" style:border-left-color={agentColor(event.nick)}>
             <span class="bubble-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
             <span class="bubble-body">{describe(event)}</span>
-            <span class="bubble-time">{time(event.createdAt)}</span>
+            <span class="bubble-time">
+              {time(event.createdAt)}
+              {@render idButton(event.id)}
+            </span>
           </div>
         {:else if mode(event.kind) === 'alert'}
           <div class="alert">
@@ -217,13 +250,17 @@
             <span class="alert-label">{alertLabel(event)}</span>
             <span class="alert-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
             <span class="alert-text">{describe(event)}</span>
-            <span class="alert-time">{time(event.createdAt)}</span>
+            <span class="alert-time">
+              {time(event.createdAt)}
+              {@render idButton(event.id)}
+            </span>
           </div>
         {:else}
           <div class="service">
             <span class="svc-time">{time(event.createdAt)}</span>
             <span class="svc-nick" style:color={agentColor(event.nick)}>{event.nick ?? 'system'}</span>
             <span class="svc-text">{describe(event)}</span>
+            <span class="svc-id">{@render idButton(event.id)}</span>
           </div>
         {/if}
       {:else}
@@ -747,6 +784,51 @@
 
     .right {
       display: none;
+    }
+  }
+
+  /* ── event ids: the handle a person uses to rewind from the cli ───────── */
+
+  .id {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0 0 0 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: inherit;
+    color: #464c55;
+    cursor: pointer;
+    /* Quiet until wanted: this is a handle, not information anyone reads. */
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  .bubble:hover .id,
+  .alert:hover .id,
+  .service:hover .id,
+  .id:focus-visible,
+  .id.copied {
+    opacity: 1;
+  }
+
+  .id:hover {
+    color: #8b919b;
+  }
+
+  .id.copied {
+    color: #4cae72;
+  }
+
+  .svc-id {
+    margin-left: auto;
+  }
+
+  /* A handle that only appears on hover is a handle a touch screen never has.
+     Keyed on hover rather than width: a tablet is wide and still has no cursor. */
+  @media (hover: none) {
+    .id {
+      opacity: 1;
+      padding: 4px 2px 4px 8px;
     }
   }
 
