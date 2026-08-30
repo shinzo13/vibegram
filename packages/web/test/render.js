@@ -106,5 +106,28 @@ if (append) {
   check('new event appended', view.text.includes('src/x.ts'));
 }
 
+// ── the pane switcher ─────────────────────────────────────────────────────
+// Three columns do not fit a phone, so a narrow screen shows one at a time.
+// The switcher is rendered always and hidden by css — jsdom applies no
+// stylesheet, so what is checked here is that the mechanism exists and works.
+
+check(
+  'a switcher for narrow screens is rendered',
+  view.dom.window.document.querySelector('.panes') !== null,
+);
+check('the feed is the pane shown first', html().includes('data-pane="feed"'));
+
+const paneButtons = [...view.dom.window.document.querySelectorAll('.panes button')].map((b) => b.textContent.trim());
+check('all three panes are reachable', paneButtons.length === 3, paneButtons);
+
+const treeButton = [...view.dom.window.document.querySelectorAll('.panes button')].find((b) =>
+  b.textContent.includes('tree'),
+);
+if (treeButton) {
+  treeButton.click();
+  await view.flush();
+  check('tapping a pane switches to it', html().includes('data-pane="tree"'), html().slice(0, 80));
+}
+
 console.log(failures === 0 ? '\ninterface renders correctly' : `\nfailed: ${failures}`);
 process.exit(failures === 0 ? 0 : 1);

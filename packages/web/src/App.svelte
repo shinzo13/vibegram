@@ -19,6 +19,10 @@
   let stream = null;
   let feedEl;
 
+  // Which pane a phone shows. Three columns do not fit a hand, and the feed is
+  // what people open the link for — the rest is a tap away.
+  let pane = $state('feed');
+
   const acked = $derived(
     new Set(plan.acks.filter((a) => a.revision === plan.revision).map((a) => a.nick)),
   );
@@ -134,7 +138,7 @@
     <p class="hint">Ask the team for the view link — it looks like /r/&lt;token&gt;. A room id will not do.</p>
   </div>
 {:else}
-<div class="body">
+<div class="body" data-pane={pane}>
   <aside class="left">
     <div class="scroll">
       <h2 class="label agents-label">agents</h2>
@@ -248,6 +252,16 @@
     </div>
   </aside>
 </div>
+
+<!-- Shown only on a narrow screen; on a wide one all three panes are visible
+     at once and there is nothing to switch between. -->
+<nav class="panes">
+  <button class:on={pane === 'agents'} onclick={() => (pane = 'agents')}>
+    agents<span class="badge">{agents.length}</span>
+  </button>
+  <button class:on={pane === 'feed'} onclick={() => (pane = 'feed')}>feed</button>
+  <button class:on={pane === 'tree'} onclick={() => (pane = 'tree')}>tree</button>
+</nav>
 {/if}
 
 <style>
@@ -268,6 +282,9 @@
 
   :global(#app) {
     height: 100vh;
+    /* dvh follows the mobile browser chrome as it hides and reappears; without
+       it the last line of the feed sits under the address bar */
+    height: 100dvh;
     display: grid;
     grid-template-rows: 44px 1fr;
   }
@@ -730,6 +747,136 @@
 
     .right {
       display: none;
+    }
+  }
+
+  /* ── the pane switcher: only ever visible on a narrow screen ──────────── */
+
+  .panes {
+    display: none;
+  }
+
+  @media (max-width: 720px) {
+    :global(#app) {
+      grid-template-rows: 40px 1fr auto;
+    }
+
+    header {
+      gap: 8px;
+      padding: 0 12px;
+    }
+
+    /* The room name is the one thing worth keeping when space runs out: the
+       wordmark repeats on every page and "read only" is said again in the
+       footer. */
+    .wordmark,
+    .readonly,
+    .tick {
+      display: none;
+    }
+
+    .room {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .conn {
+      flex: none;
+    }
+
+    .body {
+      grid-template-columns: 1fr;
+      min-width: 0;
+    }
+
+    .left,
+    .right {
+      display: none;
+      border-right: none;
+      border-left: none;
+    }
+
+    .body[data-pane='agents'] .left,
+    .body[data-pane='tree'] .right {
+      display: flex;
+    }
+
+    .body[data-pane='agents'] .center,
+    .body[data-pane='tree'] .center {
+      display: none;
+    }
+
+    .feed {
+      padding: 12px 12px 16px;
+    }
+
+    .bubble {
+      max-width: 100%;
+    }
+
+    /* The alert rows are a single line of five parts on a desktop; on a phone
+       that line becomes five words a row deep. */
+    .alert {
+      flex-wrap: wrap;
+      row-gap: 2px;
+    }
+
+    .alert-text {
+      flex-basis: 100%;
+    }
+
+    .service {
+      flex-wrap: wrap;
+      row-gap: 2px;
+    }
+
+    .foot,
+    .legend {
+      padding-left: 12px;
+      padding-right: 12px;
+    }
+
+    .panes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: #131417;
+      border-top: 1px solid #23252b;
+      /* Clears the home indicator on a phone without a bar, and collapses to
+         nothing everywhere else. */
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .panes button {
+      appearance: none;
+      background: none;
+      border: none;
+      border-top: 2px solid transparent;
+      color: #6f757f;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      /* 44px of height: anything less is a miss on a thumb. */
+      padding: 14px 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+
+    .panes button.on {
+      color: #d5d7dc;
+      border-top-color: #4cae72;
+    }
+
+    .badge {
+      font-size: 10px;
+      color: #565c66;
+    }
+
+    .panes button.on .badge {
+      color: #6f757f;
     }
   }
 </style>
