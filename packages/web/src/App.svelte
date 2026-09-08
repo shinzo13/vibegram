@@ -17,7 +17,24 @@
   let connected = $state(false);
 
   let stream = null;
-  let feedEl;
+  // `$state` so the scroll effects re-run once `bind:this` fills it in.
+  let feedEl = $state(null);
+
+  // Same courtesy the alert dot pays: a reader who asked for less motion gets
+  // an instant jump instead of a glide.
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+  // `scrollTo` with options is the animated path; the bare assignment is the
+  // fallback for jsdom in the tests, which implements neither smooth scrolling
+  // nor the method itself.
+  function toTail(smooth) {
+    if (!feedEl) return;
+    if (typeof feedEl.scrollTo === 'function') {
+      feedEl.scrollTo({ top: feedEl.scrollHeight, behavior: smooth && !reduceMotion ? 'smooth' : 'auto' });
+    } else {
+      feedEl.scrollTop = feedEl.scrollHeight;
+    }
+  }
 
   // Which pane a phone shows. Three columns do not fit a hand, and the feed is
   // what people open the link for — the rest is a tap away.
@@ -136,13 +153,29 @@
     if (!denied) listen();
   });
 
+  // Whether the reader is at the tail. Measured in `$effect.pre`, before the
+  // new row lands in the DOM — once it is there the scroll height has already
+  // grown and this always reads false.
+  let atTail = true;
+  $effect.pre(() => {
+    events.length;
+    if (feedEl) atTail = feedEl.scrollHeight - feedEl.scrollTop - feedEl.clientHeight < 80;
+  });
+
   // Follow the tail, but only when the reader is already there: otherwise
   // reading older events would be yanked away by every new arrival.
+  let landed = false;
   $effect(() => {
     events.length;
     if (!feedEl) return;
-    const atBottom = feedEl.scrollHeight - feedEl.scrollTop - feedEl.clientHeight < 80;
-    if (atBottom) queueMicrotask(() => (feedEl.scrollTop = feedEl.scrollHeight));
+    // First batch from /api/state: drop straight to the bottom. Gliding through
+    // the whole history on load would just read as slow.
+    if (!landed) {
+      landed = true;
+      queueMicrotask(() => toTail(false));
+      return;
+    }
+    if (atTail) queueMicrotask(() => toTail(true));
   });
 </script>
 
