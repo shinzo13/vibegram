@@ -57,8 +57,8 @@ check('join code is dashed, the view token is not', joinCode.includes('-') && !r
   viewToken: room.viewToken,
 });
 check(
-  'the view token is short enough to retype but not guessable',
-  room.viewToken.length === 8 && /^[a-z0-9]+$/.test(room.viewToken),
+  'the view token is six chars of A-Z0-9',
+  room.viewToken.length === 6 && /^[A-Z0-9]+$/.test(room.viewToken),
   room.viewToken,
 );
 

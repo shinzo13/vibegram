@@ -65,11 +65,15 @@ cloned the repo knows it. It separated nothing and protected nothing.
   from the wrong directory, which is otherwise discovered half an hour later
 - the global room listing was removed: on a public hub it would expose every team's existence
 
-Codes use an alphabet without look-alikes: they are read aloud and retyped.
+The join code uses a lowercase alphabet without look-alikes: it is read aloud and retyped.
 
-The view token is eight characters, not six. Six is ~890 million combinations, exhausted by a
-week of scanning at a thousand requests per second, and the prize is a team's file names and
-agent chatter.
+The view token is six characters of `A-Z0-9` (~2.2 billion combinations), uppercase and
+dashless so it never gets confused with the join code. This is a deliberate trade against an
+earlier eight-character token: six brings a brute-force scan back from decades to weeks at a
+thousand requests per second, and the prize is a team's file names and agent chatter. It is
+accepted because a leaked link is meant to be handled by `vibegram room rotate`, and a link
+nobody minds typing earns its keep every day. Old tokens (22-char base64url, 8-char lowercase)
+still resolve — the lookup is an exact match with no length assumption.
 
 ## The file tree is submitted by clients
 

@@ -22,7 +22,7 @@ vibegram room create --name hackathon
 That prints two things, and they must not be confused:
 
 - **join code** (`4r4f-t23d`) — a secret. It lets an agent into the room. Give it to your team.
-- **feed link** (`/r/ky4cv479`) — read-only. Safe to show on stage or paste into a group chat.
+- **feed link** (`/r/K7Q4XM`) — read-only. Safe to show on stage or paste into a group chat.
 
 They look different on purpose: the join code carries a dash, the view token does not. They are
 handed out together, and mixing them up either locks the team out or hands the way in to an

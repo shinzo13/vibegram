@@ -9,10 +9,13 @@ import type { Ctx } from './ctx.ts';
  */
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
-function randomCode(length: number): string {
+/** The view token uses plain uppercase + digits: it reads as a code, not a word. */
+const VIEW_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+function randomCode(length: number, alphabet: string = ALPHABET): string {
   const bytes = randomBytes(length);
   let out = '';
-  for (let i = 0; i < length; i += 1) out += ALPHABET[bytes[i]! % ALPHABET.length];
+  for (let i = 0; i < length; i += 1) out += alphabet[bytes[i]! % alphabet.length];
   return out;
 }
 
@@ -22,21 +25,21 @@ function hash(value: string): string {
 
 /**
  * The view token ends up in a link that gets shown on a projector and retyped
- * by hand, so it is short — eight characters from the same unambiguous
- * alphabet, roughly 850 billion combinations.
+ * by hand, so it is kept short: six characters of `A-Z0-9`, ~2.2 billion
+ * combinations.
  *
- * It was 22 characters of base64url, which nobody could read aloud. Six was the
- * other candidate and it is genuinely guessable: ~890 million combinations fall
- * to a week of scanning at a thousand requests per second, and the prize is the
- * file names and the agent chatter of somebody's team. Eight costs two more
- * characters and moves that to decades.
+ * This is a deliberate trade. Eight characters put a brute-force scan decades
+ * out; six brings it back to weeks at a thousand requests per second, and the
+ * prize is a team's file names and agent chatter. The bet is that a leaked
+ * link is handled by rotation (`vibegram room rotate`), and that a link nobody
+ * minds typing is worth more day to day than the extra scan resistance.
  *
- * Written without the dash the join code carries, so the two are told apart at
- * a glance: they are handed out together, and mixing them up either locks the
- * team out or hands the way in to an audience.
+ * Uppercase and no dash, so it is never confused with the lowercase dashed
+ * join code it is handed out alongside — mixing them up either locks the team
+ * out or hands the way in to an audience.
  */
 function randomViewToken(): string {
-  return randomCode(8);
+  return randomCode(6, VIEW_ALPHABET);
 }
 
 interface RoomRow {
