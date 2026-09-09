@@ -186,7 +186,25 @@
 {/snippet}
 
 <header>
-  <span class="wordmark">vibegram</span>
+  <span class="brand">
+    <!-- The mark, inline so it takes the wordmark's colour. Asymmetric V: left
+         stroke full length, right one short and dimmed. See logo/README.md. -->
+    <svg
+      class="mark"
+      viewBox="0 0 64 64"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="7"
+      stroke-linecap="round"
+      aria-hidden="true"
+    >
+      <path d="M16 14 L32 46" />
+      <path d="M48 14 L38 34" opacity="0.45" />
+    </svg>
+    <span class="wordmark">vibegram</span>
+  </span>
   <span class="tick"></span>
   <span class="room">{roomName}</span>
   <span class="conn" class:lost={!connected}>
@@ -366,6 +384,19 @@
     padding: 0 16px;
     background: #131417;
     border-bottom: 1px solid #23252b;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #d5d7dc;
+  }
+
+  .mark {
+    flex: none;
+    /* The mark's optical centre sits high; drop it a hair onto the text row. */
+    margin-top: 1px;
   }
 
   .wordmark {
