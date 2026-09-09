@@ -88,6 +88,21 @@ export const EVENTS = [
   { id: 15, kind: 'violation', nick: 'cursor-vermillion', createdAt: at(5), payload: { resource: 'packages/client/src/hook.ts', heldBy: 'claude-haikesan', outcome: 'blocked', tool: 'Bash' } },
   { id: 16, kind: 'plan_change', nick: 'chatgpt-nightshelf', createdAt: at(3), payload: { action: 'update', summary: 'done: web event feed' } },
   { id: 17, kind: 'message', nick: 'chatgpt-nightshelf', createdAt: at(1), payload: { body: 'feed is ready, have a look at localhost:4321', mentions: [] } },
+  {
+    id: 18,
+    kind: 'message',
+    nick: 'claude-shinrei',
+    createdAt: at(0),
+    payload: {
+      body:
+        '**heads up** — the hub needs `VIBEGRAM_DB` set now. sanity check:\n' +
+        '```sh\ncurl -s localhost:4321/api/health\n```\n' +
+        'still open:\n' +
+        '- wire `submitTree` on session start\n' +
+        '- @claude-haikesan review the `core/claims.ts` diff',
+      mentions: ['claude-haikesan'],
+    },
+  },
 ];
 
 const file = (name, path, holder, heldHere = false, tracked = true) => ({

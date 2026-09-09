@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { agentColor, alertLabel, describe, mode, plural, time } from './format.js';
+  import { renderMarkdown } from './markdown.js';
+  import Identicon from './Identicon.svelte';
   import Tree from './Tree.svelte';
 
   // The read-only token comes from the link: /r/<token>. The room id is not
@@ -151,6 +153,14 @@
     }
     await loadState();
     if (!denied) listen();
+    // The web fonts land after the first paint and change every row's height,
+    // leaving the first snap-to-bottom short. Snap once more when they are in.
+    try {
+      await document.fonts?.ready;
+    } catch {
+      // no font-loading API — the first snap stands
+    }
+    requestAnimationFrame(() => toTail(false));
   });
 
   // Whether the reader is at the tail. Measured in `$effect.pre`, before the
@@ -225,12 +235,12 @@
       <h2 class="label agents-label">agents</h2>
       {#each agents as agent}
         <div class="agent" class:offline={agent.status !== 'online'}>
-          <span
-            class="key"
-            style:background={agent.status === 'online' ? agentColor(agent.nick) : '#2b2e35'}
-          ></span>
+          <Identicon nick={agent.nick} size={30} />
           <div class="agent-body">
-            <span class="nick" style:color={agentColor(agent.nick)}>{agent.nick}</span>
+            <span class="agent-head">
+              <span class="nick" style:color={agentColor(agent.nick)}>{agent.nick}</span>
+              <span class="status-dot" class:on={agent.status === 'online'}></span>
+            </span>
             {#if agent.description}<span class="desc">{agent.description}</span>{/if}
             {#if agent.skills?.length}<span class="meta">{agent.skills.join(' · ')}</span>{/if}
             {#if agent.branch}<span class="meta">branch {agent.branch}</span>{/if}
@@ -287,17 +297,21 @@
     <div class="feed" bind:this={feedEl}>
       {#each events as event (event.id)}
         {#if mode(event.kind) === 'message'}
-          <div class="bubble" style:border-left-color={agentColor(event.nick)}>
-            <span class="bubble-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
-            <span class="bubble-body">{describe(event)}</span>
-            <span class="bubble-time">
-              {time(event.createdAt)}
-              {@render idButton(event.id)}
-            </span>
+          <div class="msg">
+            <Identicon nick={event.nick} size={26} />
+            <div class="bubble" style:border-left-color={agentColor(event.nick)}>
+              <span class="bubble-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
+              <div class="bubble-body md">{@html renderMarkdown(event.payload?.body ?? describe(event))}</div>
+              <span class="bubble-time">
+                {time(event.createdAt)}
+                {@render idButton(event.id)}
+              </span>
+            </div>
           </div>
         {:else if mode(event.kind) === 'alert'}
           <div class="alert">
             <span class="alert-dot"></span>
+            <Identicon nick={event.nick} size={16} />
             <span class="alert-label">{alertLabel(event)}</span>
             <span class="alert-nick" style:color={agentColor(event.nick)}>{event.nick}</span>
             <span class="alert-text">{describe(event)}</span>
@@ -309,6 +323,7 @@
         {:else}
           <div class="service">
             <span class="svc-time">{time(event.createdAt)}</span>
+            <Identicon nick={event.nick ?? ''} size={13} />
             <span class="svc-nick" style:color={agentColor(event.nick)}>{event.nick ?? 'system'}</span>
             <span class="svc-text">{describe(event)}</span>
             <span class="svc-id">{@render idButton(event.id)}</span>
@@ -444,7 +459,10 @@
 
   .body {
     display: grid;
-    grid-template-columns: 300px 1fr 380px;
+    /* The info column carries cards now, not a flat list — it needs the room.
+       The extra width comes off the feed, which was wider than a message ever
+       is on a desktop. */
+    grid-template-columns: 400px minmax(0, 1fr) 380px;
     min-height: 0;
   }
 
@@ -492,32 +510,60 @@
     text-transform: none;
   }
 
+  /* Each agent is a card, not a row in a monolith: it carries a name, a
+     specialisation, a branch and a focus, and that reads better boxed. */
   .agent {
     display: grid;
-    grid-template-columns: 3px 1fr;
+    grid-template-columns: 30px 1fr;
     gap: 11px;
-    padding: 7px 16px 7px 0;
+    align-items: start;
+    margin: 0 12px 8px;
+    padding: 10px 12px;
+    background: #191a1e;
+    border: 1px solid #24262c;
+    border-radius: 9px;
+  }
+
+  .agent:first-of-type {
+    margin-top: 2px;
   }
 
   .agent.offline {
-    opacity: 0.45;
-  }
-
-  /* The colour key: the same hue identifies this agent in the tree and feed. */
-  .key {
-    border-radius: 0 2px 2px 0;
+    opacity: 0.5;
   }
 
   .agent-body {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
     min-width: 0;
+  }
+
+  .agent-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3b3f47;
+    flex: none;
+  }
+
+  .status-dot.on {
+    background: #4cae72;
   }
 
   .nick {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .desc {
@@ -641,7 +687,13 @@
 
   .feed {
     flex: 1;
+    /* A reading measure: past this the feed just spreads a message across half
+       a metre. Wider screens get side margin instead. */
+    align-self: center;
+    width: 100%;
+    max-width: 900px;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 16px 24px 20px;
     display: flex;
     flex-direction: column;
@@ -656,9 +708,21 @@
     color: #4a5058;
   }
 
-  .bubble {
-    max-width: 620px;
+  /* A message row: avatar in the gutter, bubble beside it — a chat, basically. */
+  .msg {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     margin: 7px 0;
+  }
+
+  .msg :global(.identicon) {
+    margin-top: 3px;
+  }
+
+  .bubble {
+    max-width: 560px;
+    min-width: 0;
     padding: 9px 13px 8px;
     background: #202329;
     border-radius: 3px 12px 12px 12px;
@@ -679,6 +743,100 @@
     color: #d9dbe0;
   }
 
+  /* ── markdown in a message ───────────────────────────────────────────────
+     Agents write it constantly. `code` and **bold** get a real highlight, not
+     just a different face — a warm chip and a cool one, so they read apart. */
+  .md :global(p) {
+    margin: 0;
+  }
+
+  .md :global(p + p),
+  .md :global(pre),
+  .md :global(ul),
+  .md :global(ol),
+  .md :global(blockquote) {
+    margin: 6px 0 0;
+  }
+
+  .md :global(strong) {
+    font-weight: 600;
+    color: #eaf1f8;
+    background: rgba(108, 182, 255, 0.14);
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+
+  .md :global(em) {
+    color: #c6cbd3;
+  }
+
+  .md :global(del) {
+    color: #6f757f;
+  }
+
+  .md :global(code) {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.9em;
+    color: #e6b673;
+    background: #2b2f38;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  .md :global(pre) {
+    background: #15161a;
+    border: 1px solid #262931;
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+  }
+
+  .md :global(pre code) {
+    display: block;
+    color: #cdd2da;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+  }
+
+  .md :global(a) {
+    color: #6cb6ff;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .md :global(.mention) {
+    color: #7cc4ff;
+    background: rgba(108, 182, 255, 0.13);
+    border-radius: 3px;
+    padding: 0 3px;
+    font-weight: 500;
+  }
+
+  .md :global(ul),
+  .md :global(ol) {
+    padding-left: 18px;
+  }
+
+  .md :global(li) {
+    margin: 1px 0;
+  }
+
+  .md :global(blockquote) {
+    border-left: 2px solid #3b3f47;
+    padding-left: 10px;
+    color: #9aa1ad;
+  }
+
+  .md :global(.md-h) {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #e8eaee;
+    margin: 6px 0 3px;
+  }
+
   .bubble-time {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
@@ -690,8 +848,10 @@
   .service {
     padding: 3px 0 3px 4px;
     display: flex;
-    align-items: baseline;
-    gap: 9px;
+    align-items: center;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    gap: 8px;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
   }
@@ -706,6 +866,7 @@
 
   .svc-text {
     color: #6b717b;
+    overflow-wrap: anywhere;
   }
 
   /* A collision has to be visible without reading — that is the whole point. */
@@ -839,11 +1000,51 @@
     padding: 0 16px;
   }
 
+  /* ── scrollbars ──────────────────────────────────────────────────────────
+     The browser default is a wide grey slab that fights the dark chrome. Make
+     it a thin rail that stays out of the way and only firms up on hover. */
+  .scroll,
+  .feed,
+  .tree-rows {
+    scrollbar-width: thin;
+    scrollbar-color: #30333a transparent;
+  }
+
+  .scroll::-webkit-scrollbar,
+  .feed::-webkit-scrollbar,
+  .tree-rows::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  .scroll::-webkit-scrollbar-track,
+  .feed::-webkit-scrollbar-track,
+  .tree-rows::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll::-webkit-scrollbar-thumb,
+  .feed::-webkit-scrollbar-thumb,
+  .tree-rows::-webkit-scrollbar-thumb {
+    background: #2b2e35;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 9px;
+  }
+
+  .scroll:hover::-webkit-scrollbar-thumb,
+  .feed:hover::-webkit-scrollbar-thumb,
+  .tree-rows:hover::-webkit-scrollbar-thumb {
+    background: #3c414b;
+    background-clip: padding-box;
+  }
+
   /* Below this width the tree is no longer readable at 380px; the brief calls
-     for dropping the column rather than squeezing it. */
-  @media (max-width: 1100px) {
+     for dropping the column rather than squeezing it. With the wider info
+     column the three-up layout runs out of room sooner. */
+  @media (max-width: 1240px) {
     .body {
-      grid-template-columns: 300px 1fr;
+      grid-template-columns: 372px minmax(0, 1fr);
     }
 
     .right {

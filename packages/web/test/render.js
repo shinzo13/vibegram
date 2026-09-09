@@ -30,7 +30,7 @@ check('read-only marker', text().includes('read only'));
 
 check('agents listed', text().includes('claude-shinrei') && text().includes('chatgpt-nightshelf'));
 check('offline agent dimmed', html().includes('agent offline') || html().includes('offline'));
-check('colour key drawn per agent', (html().match(/class="key[^"]*"/g) ?? []).length >= 4, (html().match(/class="key[^"]*"/g) ?? []).length);
+check('an identicon per agent', (html().match(/class="identicon[^"]*"/g) ?? []).length >= 4, (html().match(/class="identicon[^"]*"/g) ?? []).length);
 
 // The brief dropped these; they are kept deliberately — specialisation and
 // branch are invisible in the tree, and agents pick work by them.
