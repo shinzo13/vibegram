@@ -10,7 +10,7 @@
 import { createInterface } from 'node:readline';
 import type { ClaimConflict, Pending } from '../../protocol/src/index.ts';
 import * as api from './api.ts';
-import { loadIdentity, logHook, toRelative, type Identity } from './config.ts';
+import { currentBranch, loadIdentity, logHook, toRelative, type Identity } from './config.ts';
 import { cardsText, pendingText, planText, workText } from './format.ts';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -329,9 +329,74 @@ async function handle(request: Request, identity: Identity | null): Promise<void
   send({ id, error: { code: -32601, message: `unknown method: ${method}` } });
 }
 
+/**
+ * Presence heartbeat.
+ *
+ * An agent's `last_seen_at` — the whole basis of the "online" dot — is only
+ * refreshed as a side effect of `GET /api/pending`, which the PostToolUse hook
+ * calls while the agent is actively running tools. A session that is alive but
+ * between turns makes no hub calls at all, and the hub marks it offline after
+ * ten minutes. The dot then lies.
+ *
+ * This is fixed from a process that lives exactly as long as the session — the
+ * MCP server — rather than from the SSE stream, on purpose:
+ *
+ *  - `/api/stream` carries a room view token, not an agent identity: the web
+ *    view and read-only watchers hold the same stream and must not light up;
+ *  - an open socket is not a live agent. A blocked event loop keeps its socket,
+ *    and a tunnel holds a dead upstream open for minutes — presence tied to the
+ *    socket would keep a dead agent's claims held forever, the exact failure
+ *    `reapStale` exists to prevent.
+ *
+ * This process dies with the session, so a real crash still reaches `reapStale`.
+ * Presence stays one fact (`last_seen_at`) with one source.
+ */
+export const HEARTBEAT_INTERVAL_MS = 2 * 60_000;
+
+export function heartbeatLoop(
+  beat: () => void | Promise<void>,
+  intervalMs: number = HEARTBEAT_INTERVAL_MS,
+): { stop: () => void } {
+  const tick = (): void => {
+    void Promise.resolve()
+      .then(beat)
+      .catch(() => {
+        // A hub blip is not a reason to stop beating or to crash the server.
+      });
+  };
+  tick();
+  const timer = setInterval(tick, intervalMs);
+  // Must not keep the process alive by itself: when the parent closes our stdio
+  // the session is over and the loop ends with it.
+  timer.unref?.();
+  return { stop: () => clearInterval(timer) };
+}
+
 export function mcpMain(): void {
   const identity = loadIdentity(process.cwd());
   const rl = createInterface({ input: process.stdin });
+
+  const heartbeat = identity
+    ? heartbeatLoop(() =>
+        api
+          .call(
+            identity,
+            'POST',
+            '/api/heartbeat',
+            { branch: currentBranch(identity.root) ?? undefined },
+            api.HOOK_TIMEOUT_MS,
+          )
+          .then(() => undefined),
+      )
+    : null;
+
+  // The parent closes our stdin when the session ends — take the loop down with
+  // it so a crashed agent still goes stale and its claims are released.
+  const shutdown = (): void => {
+    heartbeat?.stop();
+    process.exit(0);
+  };
+  rl.on('close', shutdown);
 
   rl.on('line', (line) => {
     const text = line.trim();

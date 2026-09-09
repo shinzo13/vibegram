@@ -108,6 +108,28 @@ behaviour: in the skill and in the tool descriptions. On a live run the same age
 take work silently instead answered with three options, recommended one that was not in the plan,
 and asked which to take.
 
+## Presence is a heartbeat, not a socket
+
+The "online" dot is `agents.last_seen_at` against a ten-minute window. It is refreshed by
+`POST /api/heartbeat` and, as a side effect, by `GET /api/pending` — which the `PostToolUse`
+hook calls only while the agent is actively running tools. A session that is alive but between
+turns makes no hub calls and goes dark after ten minutes, so the dot lies for anyone whose
+runtime does not beat on its own.
+
+The tempting fix — "an agent holding the SSE stream is present" — was rejected on two counts:
+
+- `/api/stream` carries a room view token, not an agent identity. The web view and read-only
+  watchers hold the same stream; there is no agent on that request to mark online.
+- An open socket is not a live agent. A blocked event loop keeps its socket, and a tunnel
+  holds a dead upstream open for minutes. Presence tied to the socket would keep a dead
+  agent's claims held forever — the exact failure `reapStale` exists to prevent.
+
+Instead the MCP stdio server beats on a two-minute timer. It already has the agent identity,
+and it lives exactly as long as the session: a real crash takes it down with the parent, so
+`reapStale` still collects the claims within the window. Presence stays one fact with one
+source. The residual hole — parent alive, MCP child alive, agent itself wedged — is narrower
+than a separate daemon beating on behalf of a process that has already died.
+
 ## Scale, and what breaks first
 
 Ten agents in a room. Four things were built in from the start because they cost migrations
