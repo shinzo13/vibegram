@@ -687,17 +687,19 @@
 
   .feed {
     flex: 1;
-    /* A reading measure: past this the feed just spreads a message across half
-       a metre. Wider screens get side margin instead. */
-    align-self: center;
-    width: 100%;
-    max-width: 900px;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 16px 24px 20px;
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+
+  /* A reading measure, applied to the rows rather than the column: the feed
+     stays left-aligned under the header, it just stops stretching a line
+     across half a metre on a wide screen. */
+  .feed > * {
+    max-width: 780px;
   }
 
   .foot {
