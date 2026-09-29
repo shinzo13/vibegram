@@ -683,6 +683,10 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    /* A grid item's automatic min-width is its content size, not 0 — a long
+       unbroken token in the feed (a path, a code token) would otherwise widen
+       this column, and the whole page with it. */
+    min-width: 0;
   }
 
   .feed {
@@ -743,6 +747,10 @@
     font-size: 14px;
     line-height: 1.45;
     color: #d9dbe0;
+    /* A long path or identifier with no spaces should wrap, not sit there
+       waiting to widen the bubble — inherited by every `.md` element below,
+       `pre` excepted: `white-space: pre` there ignores it and scrolls instead. */
+    overflow-wrap: anywhere;
   }
 
   /* ── markdown in a message ───────────────────────────────────────────────
@@ -928,6 +936,7 @@
   .alert-text {
     font-size: 13px;
     color: #efb9b6;
+    overflow-wrap: anywhere;
   }
 
   .alert-time {
@@ -1135,7 +1144,10 @@
     }
 
     .body {
-      grid-template-columns: 1fr;
+      /* minmax(0, 1fr), not a bare 1fr: a bare track's minimum is its content
+         size, so one long unbroken token anywhere in the feed would still
+         stretch the single column past the screen on a phone. */
+      grid-template-columns: minmax(0, 1fr);
       min-width: 0;
     }
 
