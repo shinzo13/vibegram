@@ -84,6 +84,18 @@ export function listEvents(ctx: Ctx, roomId: string, after = 0, limit = 200): Ev
 }
 
 /**
+ * The newest events of a room, oldest first. A viewer opening the feed wants
+ * the tail, not the first page: in a long session the start of the feed is
+ * history, and everything after it would never reach the screen.
+ */
+export function latestEvents(ctx: Ctx, roomId: string, limit = 200): Event[] {
+  const rows = ctx.db
+    .prepare(`${SELECT_EVENT_SQL} WHERE e.room_id = ? ORDER BY e.id DESC LIMIT ?`)
+    .all(roomId, limit);
+  return (rows as Parameters<typeof rowToEvent>[0][]).map(rowToEvent).reverse();
+}
+
+/**
  * Whether an event is relevant to a particular agent.
  *
  * The filter is on from the start rather than "once it gets noisy": with ten

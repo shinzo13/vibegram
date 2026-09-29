@@ -327,6 +327,7 @@ const routes: Record<string, Handler> = {
 
   'GET /api/state': (req) => {
     const room = requireRoomByView(req);
+    const after = req.url.searchParams.get('after');
     return {
       room: { id: room.id, name: room.name },
       // Cards rather than bare nicks: the web view and agents both need to know
@@ -334,7 +335,9 @@ const routes: Record<string, Handler> = {
       agents: core.listCards(req.ctx, room.id),
       claims: core.listClaims(req.ctx, room.id),
       plan: core.getPlan(req.ctx, room.id),
-      events: core.listEvents(req.ctx, room.id, Number(req.url.searchParams.get('after') ?? 0)),
+      // Without `after` the viewer is opening the feed and wants its tail; with
+      // it, cli and the watchdog page forward from the start 200 at a time.
+      events: after === null ? core.latestEvents(req.ctx, room.id) : core.listEvents(req.ctx, room.id, Number(after)),
     };
   },
 

@@ -397,6 +397,45 @@ check(
   Object.keys(state.body),
 );
 
+// ─── the feed opens on its tail ───────────────────────────────────────────────
+
+// A room with more than one page of events: the view must open on the newest,
+// while paging with `after` still walks forward from the start.
+const long = await call('POST', '/api/rooms', { name: 'long-session' });
+const longView = long.body.room.viewToken as string;
+const longAgent = await call('POST', '/api/rooms/join', { joinCode: long.body.joinCode, nick: 'claude-long', fingerprint: 'repo2' });
+const longToken = longAgent.body.token as string;
+for (let i = 0; i < 130; i += 1) {
+  await call('POST', '/api/claims', { resources: [`src/f${i}.ts`] }, longToken);
+  await call('POST', '/api/claims/release', { resources: [`src/f${i}.ts`] }, longToken);
+}
+
+const paged: number[] = [];
+for (let after = 0; ; ) {
+  const page = await call('GET', `/api/state?view=${longView}&after=${after}`);
+  const ids = (page.body.events as { id: number }[]).map((e) => e.id);
+  if (ids.length === 0) break;
+  paged.push(...ids);
+  after = ids[ids.length - 1];
+}
+const firstPage = await call('GET', `/api/state?view=${longView}&after=0`);
+const firstIds = (firstPage.body.events as { id: number }[]).map((e) => e.id);
+check(
+  'with after, pages walk forward from the start',
+  paged.length > 200 && firstIds.length === 200 && firstIds[0] === paged[0],
+  { paged: paged.length, first: firstIds[0] },
+);
+
+const opened = await call('GET', `/api/state?view=${longView}`);
+const openedIds = (opened.body.events as { id: number }[]).map((e) => e.id);
+check(
+  'without after, the feed opens on the newest 200, oldest first',
+  openedIds.length === 200 &&
+    openedIds.join(',') === paged.slice(-200).join(',') &&
+    openedIds.every((id, i) => i === 0 || id > openedIds[i - 1]!),
+  { count: openedIds.length, first: openedIds[0], last: openedIds.at(-1), expectedLast: paged.at(-1) },
+);
+
 const missing = await call('GET', '/api/nonexistent');
 check(
   'an /api miss is an honest 404, not the SPA fallback',

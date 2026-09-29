@@ -33,6 +33,7 @@ export {
 export {
   postMessage,
   listEvents,
+  latestEvents,
   pendingFor,
   MESSAGE_INTERVAL_MS,
   type PostMessageResult,
