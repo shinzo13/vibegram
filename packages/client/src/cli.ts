@@ -43,6 +43,20 @@ function identityOrDie(): Identity {
   return identity;
 }
 
+/**
+ * Refresh the file tree after a command that means work is happening. Agents
+ * without active hooks otherwise leave the web view frozen until a manual
+ * `sync`. A failure here must not fail the command that already succeeded.
+ */
+async function refreshTree(identity: Identity): Promise<void> {
+  try {
+    const { tracked, untracked } = collectPaths(identity.root);
+    await api.submitTree(identity, tracked, untracked);
+  } catch (err) {
+    console.error(`warning: tree not refreshed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /** Flags that take a value — the value must not be read as a positional argument. */
 const VALUE_FLAGS = new Set(['-m', '--note', '--notes', '--hub', '--nick', '--dialect', '--about', '--skills', '--model']);
 
@@ -154,6 +168,7 @@ async function main(): Promise<void> {
       if (paths.length === 0) throw new Error('nothing to claim: give a path');
 
       const result = await api.claim(identity, paths, note);
+      await refreshTree(identity);
       if (result.ok) {
         console.log(`claimed: ${result.claims?.map((c) => c.resource).join(', ')}`);
         return;
@@ -171,6 +186,7 @@ async function main(): Promise<void> {
       const identity = identityOrDie();
       const paths = positional(argv, 1);
       const result = await api.release(identity, paths.length > 0 ? paths : undefined);
+      await refreshTree(identity);
       console.log(result.released.length > 0 ? `released: ${result.released.join(', ')}` : 'nothing to release');
       return;
     }
@@ -180,6 +196,7 @@ async function main(): Promise<void> {
       const text = argv.slice(1).join(' ');
       if (!text) throw new Error('empty message');
       await api.message(identity, text);
+      await refreshTree(identity);
       console.log('sent');
       return;
     }
