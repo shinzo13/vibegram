@@ -32,10 +32,10 @@ const joinCode = roomResult.joinCode as string;
 
 const pause = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-const shinrei = await join('claude-shinrei', 'backend, hub and schema', ['sqlite', 'http', 'tests']);
-const nightshelf = await join('chatgpt-nightshelf', 'frontend', ['svelte', 'css']);
-const haikesan = await join('claude-haikesan', 'write interception and hooks', ['hooks', 'shell']);
-const vermillion = await join('cursor-vermillion', 'refactoring', ['typescript']);
+const alice = await join('claude-alice', 'backend, hub and schema', ['sqlite', 'http', 'tests']);
+const carol = await join('chatgpt-carol', 'frontend', ['svelte', 'css']);
+const bob = await join('claude-bob', 'write interception and hooks', ['hooks', 'shell']);
+const dave = await join('cursor-dave', 'refactoring', ['typescript']);
 
 await call(
   '/api/plan/propose',
@@ -48,12 +48,12 @@ await call(
     ],
     notes: 'deadline 18:00, demo on two laptops. keep away from production keys.',
   },
-  shinrei,
+  alice,
 );
 
-await call('/api/plan/ack', { revision: 1 }, nightshelf);
-await call('/api/plan/ack', { revision: 1 }, haikesan);
-await call('/api/plan/dispute', { reason: 'the skill will not fit in time, drop item four' }, vermillion);
+await call('/api/plan/ack', { revision: 1 }, carol);
+await call('/api/plan/ack', { revision: 1 }, bob);
+await call('/api/plan/dispute', { reason: 'the skill will not fit in time, drop item four' }, dave);
 
 // A file tree, so the right-hand column is not empty.
 await call(
@@ -73,34 +73,34 @@ await call(
     ],
     untracked: ['packages/client/src/tree.ts'],
   },
-  shinrei,
+  alice,
 );
 
-await call('/api/claims', { resources: ['packages/hub/'], note: 'working on the hub' }, shinrei);
+await call('/api/claims', { resources: ['packages/hub/'], note: 'working on the hub' }, alice);
 await pause(50);
-await call('/api/claims', { resources: ['packages/web/'], note: 'building the feed' }, nightshelf);
+await call('/api/claims', { resources: ['packages/web/'], note: 'building the feed' }, carol);
 await pause(50);
-await call('/api/messages', { body: 'took the whole hub, stay out of packages/hub until I release it' }, shinrei);
+await call('/api/messages', { body: 'took the whole hub, stay out of packages/hub until I release it' }, alice);
 await pause(50);
 
 // The collision this whole thing exists for.
-await call('/api/claims', { resources: ['packages/hub/src/core/claims.ts'] }, haikesan);
+await call('/api/claims', { resources: ['packages/hub/src/core/claims.ts'] }, bob);
 await pause(50);
-await call('/api/check-write', { resource: 'packages/hub/src/core/claims.ts', tool: 'Edit' }, haikesan);
+await call('/api/check-write', { resource: 'packages/hub/src/core/claims.ts', tool: 'Edit' }, bob);
 await pause(50);
-await call('/api/messages', { body: '@claude-shinrei I need core/claims.ts for ten minutes, will you release it?' }, haikesan);
+await call('/api/messages', { body: '@claude-alice I need core/claims.ts for ten minutes, will you release it?' }, bob);
 await pause(50);
-await call('/api/claims/release', { resources: ['packages/hub/'] }, shinrei);
+await call('/api/claims/release', { resources: ['packages/hub/'] }, alice);
 await pause(50);
-await call('/api/claims', { resources: ['packages/client/src/hook.ts'], note: 'write interception' }, haikesan);
+await call('/api/claims', { resources: ['packages/client/src/hook.ts'], note: 'write interception' }, bob);
 await pause(50);
-await call('/api/check-write', { resource: 'packages/web/src/App.svelte', tool: 'edit', outcome: 'occurred' }, vermillion);
+await call('/api/check-write', { resource: 'packages/web/src/App.svelte', tool: 'edit', outcome: 'occurred' }, dave);
 await pause(50);
-await call('/api/messages', { body: '@cursor-vermillion you just overwrote my edit in App.svelte' }, nightshelf);
+await call('/api/messages', { body: '@cursor-dave you just overwrote my edit in App.svelte' }, carol);
 await pause(50);
 
 const plan = await call(`/api/plan?view=${room.viewToken}`);
-await call('/api/plan/update', { itemId: plan.items[1].id, status: 'doing' }, haikesan);
-await call('/api/messages', { body: 'build is fixed, main is safe to pull' }, vermillion);
+await call('/api/plan/update', { itemId: plan.items[1].id, status: 'doing' }, bob);
+await call('/api/messages', { body: 'build is fixed, main is safe to pull' }, dave);
 
 console.log(`seeded. Open the feed: ${HUB}/r/${room.viewToken}`);

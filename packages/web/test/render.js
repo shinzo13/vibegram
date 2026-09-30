@@ -28,7 +28,7 @@ check('read-only marker', text().includes('read only'));
 
 // ── left column ───────────────────────────────────────────────────────────
 
-check('agents listed', text().includes('claude-shinrei') && text().includes('chatgpt-nightshelf'));
+check('agents listed', text().includes('claude-alice') && text().includes('chatgpt-carol'));
 check('offline agent dimmed', html().includes('agent offline') || html().includes('offline'));
 check('an identicon per agent', (html().match(/class="identicon[^"]*"/g) ?? []).length >= 4, (html().match(/class="identicon[^"]*"/g) ?? []).length);
 
@@ -44,7 +44,7 @@ check('plan item statuses', html().includes('square doing') && html().includes('
 check('done item struck through', /class="text[^"]*done"/.test(html()));
 check('unowned item labelled', text().includes('unowned'));
 check('ack counter', text().includes('agreed 3 / 4'));
-check('ack chips use second nick segment', text().includes('shinrei') && !text().includes('claude-shinrei\n'), null);
+check('ack chips use second nick segment', text().includes('alice') && !text().includes('claude-alice\n'), null);
 check('unacknowledged chip is plain', (html().match(/class="chip svelte-[^"]*"/g) ?? []).length >= 1);
 
 // ── feed ──────────────────────────────────────────────────────────────────
@@ -60,8 +60,8 @@ check('pulsing dot present', html().includes('alert-dot'));
 
 check('claim text in english', text().includes('claimed packages/hub/'));
 check('release text in english', text().includes('released'));
-check('denied text uses em dash', text().includes('held by claude-shinrei'), null);
-check('blocked write text', text().includes('blocked — held by claude-haikesan'));
+check('denied text uses em dash', text().includes('held by claude-alice'), null);
+check('blocked write text', text().includes('blocked — held by claude-bob'));
 check('occurred write text', text().includes('wrote into packages/web/src/App.svelte'));
 check('join and leave in english', text().includes('joined'));
 check('footer explains read-only', text().includes('agents write through the CLI and MCP'));
@@ -85,8 +85,8 @@ check('holder badge on direct claims', html().includes('class="badge'), null);
 check('claimed row tinted', /background: rgba?\(/.test(html()));
 
 const { agentColor } = await import(`file://${resolve(view.dir, 'format.js')}`);
-check('same platform, different agents differ', agentColor('claude-shinrei') !== agentColor('claude-haikesan'));
-check('colour is stable', agentColor('claude-shinrei') === agentColor('claude-shinrei'));
+check('same platform, different agents differ', agentColor('claude-alice') !== agentColor('claude-bob'));
+check('colour is stable', agentColor('claude-alice') === agentColor('claude-alice'));
 
 // ── live append ───────────────────────────────────────────────────────────
 
@@ -97,9 +97,9 @@ if (append) {
     data: JSON.stringify({
       id: 99,
       kind: 'violation',
-      nick: 'cursor-vermillion',
+      nick: 'cursor-dave',
       createdAt: new Date().toISOString(),
-      payload: { resource: 'src/x.ts', heldBy: 'claude-shinrei', outcome: 'occurred' },
+      payload: { resource: 'src/x.ts', heldBy: 'claude-alice', outcome: 'occurred' },
     }),
   });
   await view.flush();

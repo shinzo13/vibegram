@@ -62,8 +62,8 @@ check(
   room.viewToken,
 );
 
-const a = await call('POST', '/api/rooms/join', { joinCode, nick: 'claude-shinrei', fingerprint: 'repo1' });
-const b = await call('POST', '/api/rooms/join', { joinCode, nick: 'codex-nightshelf', fingerprint: 'repo1' });
+const a = await call('POST', '/api/rooms/join', { joinCode, nick: 'claude-alice', fingerprint: 'repo1' });
+const b = await call('POST', '/api/rooms/join', { joinCode, nick: 'codex-carol', fingerprint: 'repo1' });
 check('two agents joined', a.status === 200 && b.status === 200, [a.body, b.body]);
 const tokenA = a.body.token as string;
 const tokenB = b.body.token as string;
@@ -78,7 +78,7 @@ check(
   wrongRepo.body,
 );
 
-const dup = await call('POST', '/api/rooms/join', { joinCode, nick: 'claude-shinrei', fingerprint: 'repo1' });
+const dup = await call('POST', '/api/rooms/join', { joinCode, nick: 'claude-alice', fingerprint: 'repo1' });
 check('a taken nick is refused', dup.status === 409 && dup.body.error === 'nick_taken', dup.body);
 
 const badNick = await call('POST', '/api/rooms/join', { joinCode, nick: 'Vasya', fingerprint: 'repo1' });
@@ -124,7 +124,7 @@ const claimB = await call('POST', '/api/claims', { resources: ['src/foo.ts'] }, 
 check('B is refused', claimB.body.ok === false, claimB.body);
 check(
   'the refusal names the holder and the time',
-  claimB.body.conflicts?.[0]?.heldBy === 'claude-shinrei' && typeof claimB.body.conflicts?.[0]?.since === 'string',
+  claimB.body.conflicts?.[0]?.heldBy === 'claude-alice' && typeof claimB.body.conflicts?.[0]?.since === 'string',
   claimB.body.conflicts,
 );
 
@@ -139,7 +139,7 @@ check('a neighbouring resource is free to take', claimOther.body.ok === true, cl
 const write = await call('POST', '/api/check-write', { resource: 'src/foo.ts', tool: 'Edit' }, tokenB);
 check(
   'writing into someone else\'s file is refused',
-  write.body.allow === false && write.body.conflict.heldBy === 'claude-shinrei',
+  write.body.allow === false && write.body.conflict.heldBy === 'claude-alice',
   write.body,
 );
 
@@ -158,7 +158,7 @@ check(
 
 // ─── the feed ────────────────────────────────────────────────────────────────
 
-const msg = await call('POST', '/api/messages', { body: 'stay out of routing @codex-nightshelf' }, tokenA);
+const msg = await call('POST', '/api/messages', { body: 'stay out of routing @codex-carol' }, tokenA);
 check('announcement sent', msg.status === 200, msg.body);
 
 const msg2 = await call('POST', '/api/messages', { body: 'again' }, tokenA);
@@ -171,7 +171,7 @@ const kinds = (pending.body.events as any[]).map((e) => e.kind);
 check('B sees the announcement', kinds.includes('message'), kinds);
 check(
   'own events are not returned',
-  !(pending.body.events as any[]).some((e) => e.nick === 'codex-nightshelf'),
+  !(pending.body.events as any[]).some((e) => e.nick === 'codex-carol'),
   kinds,
 );
 check('irrelevant events are filtered out', pending.body.skipped > 0, pending.body.skipped);
@@ -229,7 +229,7 @@ check(
 );
 
 const foo = src?.children?.find((c: any) => c.path === 'src/foo.ts');
-check('the claim lands on the file in the tree', foo?.heldBy === 'claude-shinrei', foo);
+check('the claim lands on the file in the tree', foo?.heldBy === 'claude-alice', foo);
 check('a claim on the file itself is not marked inherited', foo?.heldHere === true, foo?.heldHere);
 
 // A separate free directory: web/ is already partly claimed by another agent.
@@ -245,7 +245,7 @@ const treeDir = (await call('GET', `/api/tree?view=${room.viewToken}`)).body.tre
 const intro = treeDir.find((n) => n.path === 'docs/')?.children?.[0];
 check(
   'a directory claim is inherited downwards',
-  intro?.heldBy === 'claude-shinrei' && intro?.heldHere === false,
+  intro?.heldBy === 'claude-alice' && intro?.heldHere === false,
   intro,
 );
 
@@ -269,7 +269,7 @@ check('card saved', card.body.card?.description === 'backend and migrations', ca
 check('skills saved', card.body.card?.skills?.join(',') === 'sqlite,http', card.body.card?.skills);
 
 const cards = await call('GET', `/api/cards?view=${room.viewToken}`);
-const cardA = (cards.body.cards as any[]).find((c) => c.nick === 'claude-shinrei');
+const cardA = (cards.body.cards as any[]).find((c) => c.nick === 'claude-alice');
 check('the card is visible to others', cardA?.model === 'claude-opus-5', cardA);
 check(
   'the card shows the current focus',
@@ -300,7 +300,7 @@ const propose = await call(
   tokenA,
 );
 check('the first agent publishes the plan', propose.body.ok === true && propose.body.plan.revision === 1, propose.body);
-check('the author agrees with their own plan', propose.body.plan.acks?.[0]?.nick === 'claude-shinrei', propose.body.plan.acks);
+check('the author agrees with their own plan', propose.body.plan.acks?.[0]?.nick === 'claude-alice', propose.body.plan.acks);
 
 const proposeAgain = await call('POST', '/api/plan/propose', { items: ['my own plan'] }, tokenB);
 check(
@@ -327,7 +327,7 @@ check('objection accepted', dispute.body.ok === true, dispute.body);
 const afterDispute = await call('GET', `/api/plan?view=${room.viewToken}`);
 check(
   'an objection withdraws the agreement',
-  !afterDispute.body.acks.some((a: any) => a.nick === 'codex-nightshelf'),
+  !afterDispute.body.acks.some((a: any) => a.nick === 'codex-carol'),
   afterDispute.body.acks,
 );
 
@@ -354,7 +354,7 @@ check(
 );
 
 const take = await call('POST', '/api/plan/update', { itemId, status: 'doing' }, tokenA);
-check('A owns the item', take.body.ok === true && take.body.item.ownerNick === 'claude-shinrei', take.body);
+check('A owns the item', take.body.ok === true && take.body.item.ownerNick === 'claude-alice', take.body);
 
 const steal = await call('POST', '/api/plan/update', { itemId, status: 'done' }, tokenB);
 check("someone else's item is not overwritten", steal.status === 409 && steal.body.error === 'owned_by_other', steal.body);
@@ -373,7 +373,7 @@ check('a stale overwrite is rejected', notes2.status === 409 && notes2.body.erro
 const work = await call('GET', '/api/work', undefined, tokenB);
 check('work digest lists free items', Array.isArray(work.body.free), work.body);
 check('work digest shows who is busy', Array.isArray(work.body.busy) && work.body.busy.length > 0, work.body.busy?.length);
-check('work digest excludes the caller', !(work.body.cards as any[]).some((c) => c.nick === 'codex-nightshelf'));
+check('work digest excludes the caller', !(work.body.cards as any[]).some((c) => c.nick === 'codex-carol'));
 
 // ─── release ─────────────────────────────────────────────────────────────────
 

@@ -36,7 +36,7 @@ export interface RoomSecrets {
 
 // ─── participants ────────────────────────────────────────────────────────────
 
-/** Platform is derived from the nick prefix: claude-shinrei -> claude. */
+/** Platform is derived from the nick prefix: claude-alice -> claude. */
 export type Platform = 'claude' | 'chatgpt' | 'cursor' | 'codex' | 'human' | 'other';
 
 export const PLATFORMS: readonly Platform[] = ['claude', 'chatgpt', 'cursor', 'codex', 'human', 'other'];
@@ -63,8 +63,8 @@ export interface Agent {
  *    approach someone needs live state.
  *  - `branch` — every agent works in its own clone.
  *
- * The point is that on a conflict an agent knows not just "haikesan holds this
- * file", but who haikesan is, what they are doing, and whether to go there.
+ * The point is that on a conflict an agent knows not just "bob holds this
+ * file", but who bob is, what they are doing, and whether to go there.
  */
 export interface AgentCard {
   nick: string;
@@ -330,7 +330,7 @@ export function resourcesConflict(a: string, b: string): boolean {
   return aDir.startsWith(bDir) || bDir.startsWith(aDir);
 }
 
-/** claude-shinrei -> claude, chatgpt-nightshelf -> chatgpt. */
+/** claude-alice -> claude, chatgpt-carol -> chatgpt. */
 export function platformFromNick(nick: string): Platform {
   const prefix = nick.split('-')[0]?.toLowerCase() ?? '';
   return (PLATFORMS as readonly string[]).includes(prefix) ? (prefix as Platform) : 'other';
@@ -338,7 +338,7 @@ export function platformFromNick(nick: string): Platform {
 
 const NICK_RE = /^[a-z0-9]+(-[a-z0-9]+)+$/;
 
-/** A nick is a codename like `claude-shinrei`: platform, dash, callsign. */
+/** A nick is a codename like `claude-alice`: platform, dash, callsign. */
 export function isValidNick(nick: string): boolean {
   return NICK_RE.test(nick) && nick.length <= 48;
 }

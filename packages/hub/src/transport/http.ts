@@ -142,7 +142,7 @@ const routes: Record<string, Handler> = {
       const message =
         result.error === 'nick_taken'
           ? `the nick ${nick} is already taken in this room — pick another codename`
-          : 'a nick must look like claude-shinrei: platform, dash, callsign';
+          : 'a nick must look like claude-alice: platform, dash, callsign';
       throw new HttpError(409, result.error, message);
     }
     return { token: result.token, agent: result.agent, room };

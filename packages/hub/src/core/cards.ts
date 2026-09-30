@@ -23,7 +23,7 @@ const SELECT_CARD = `
 /**
  * An agent's live focus: what it holds and which plan item it took.
  *
- * This is what a static card lacks — without it "haikesan does backend" does
+ * This is what a static card lacks — without it "bob does backend" does
  * not help decide whether to approach them now or leave them alone.
  */
 function focusOf(ctx: Ctx, agentId: string): AgentFocus {

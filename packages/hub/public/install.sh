@@ -15,13 +15,13 @@ BIN_DIR="$HOME/.local/bin"
 say() { printf '%s\n' "$*"; }
 die() { printf '! %s\n' "$*" >&2; exit 1; }
 
-command -v node >/dev/null 2>&1 || die "node 22 or newer is required"
+command -v node >/dev/null 2>&1 || die "node 22.18 or newer is required"
 command -v tar >/dev/null 2>&1 || die "tar is required"
 
 # The client is plain TypeScript run by node itself — no build, no dependencies,
 # but the runtime has to be new enough to strip types on its own.
-major=$(node -p 'process.versions.node.split(".")[0]')
-[ "$major" -ge 22 ] || die "node $major is too old — 22 or newer is required"
+node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 18) ? 0 : 1)' \
+  || die "node $(node -v) is too old — 22.18 or newer is required"
 
 # Taken from the hub rather than from git: the repository is usually private,
 # and the hub is the one thing everyone in the room can already reach.

@@ -88,7 +88,7 @@ export function pendingText(pending: Pending, cli: string, rewinding = false): s
 
 /**
  * Participant cards. The point is that on a conflict an agent understands not
- * only "haikesan holds this file", but who that is and what they are doing —
+ * only "bob holds this file", but who that is and what they are doing —
  * whether to go to them now or take something else.
  */
 export function cardsText(cards: AgentCard[], selfNick?: string): string {

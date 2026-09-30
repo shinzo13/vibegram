@@ -31,7 +31,7 @@ async function call(method: string, path: string, body?: unknown, token?: string
 // ─── ten agents ──────────────────────────────────────────────────────────────
 
 const NICKS = [
-  'claude-shinrei', 'claude-haikesan', 'chatgpt-nightshelf', 'chatgpt-vermillion',
+  'claude-alice', 'claude-bob', 'chatgpt-carol', 'chatgpt-dave',
   'cursor-obsidian', 'cursor-marlow', 'codex-quill', 'codex-fen',
   'claude-tessellate', 'chatgpt-larkspur',
 ];

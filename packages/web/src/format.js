@@ -47,7 +47,7 @@ export function time(iso) {
   return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-/** Platform comes from the nick prefix: claude-shinrei -> claude. */
+/** Platform comes from the nick prefix: claude-alice -> claude. */
 export function platform(nick) {
   return (nick ?? '').split('-')[0] || 'other';
 }

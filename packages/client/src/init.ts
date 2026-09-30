@@ -359,13 +359,13 @@ function installEverything(root: string, withHooks = true): DetectedAgent[] {
 async function askNick(): Promise<string> {
   if (!process.stdin.isTTY) {
     throw new Error(
-      'no codename given. Run: vibegram join <code|hub-link> --nick claude-shinrei\n' +
+      'no codename given. Run: vibegram join <code|hub-link> --nick claude-alice\n' +
         '(the human picks the name; an agent must not invent one for itself)',
     );
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = await rl.question('Codename in the feed (for example claude-shinrei): ');
+    const answer = await rl.question('Codename in the feed (for example claude-alice): ');
     return answer.trim();
   } finally {
     rl.close();
@@ -570,7 +570,7 @@ export async function runJoin(argv: string[]): Promise<void> {
   const nick = flagValue(argv, '--nick')?.trim() ?? (await askNick());
   if (!isValidNick(nick)) {
     throw new Error(
-      `codename "${nick}" will not do: it must look like claude-shinrei — platform, dash, callsign, lowercase`,
+      `codename "${nick}" will not do: it must look like claude-alice — platform, dash, callsign, lowercase`,
     );
   }
 
