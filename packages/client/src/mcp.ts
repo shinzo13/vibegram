@@ -10,7 +10,7 @@
 import { createInterface } from 'node:readline';
 import type { ClaimConflict, Pending } from '../../protocol/src/index.ts';
 import * as api from './api.ts';
-import { ambiguityText, currentBranch, logHook, resolveIdentity, toRelative, type Identity } from './config.ts';
+import { currentBranch, loadIdentity, logHook, toRelative, type Identity } from './config.ts';
 import { cardsText, pendingText, planText, workText } from './format.ts';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -309,7 +309,7 @@ async function handle(request: Request, identity: Identity | null): Promise<void
           content: [
             {
               type: 'text',
-              text: notConnected,
+              text: 'vibegram is not connected in this repository. Ask the human to run: vibegram init --nick <codename>',
             },
           ],
         },
@@ -372,17 +372,8 @@ export function heartbeatLoop(
   return { stop: () => clearInterval(timer) };
 }
 
-/** Set once at startup: why the tools cannot run, if they cannot. */
-let notConnected = '';
-
 export function mcpMain(): void {
-  // VIBEGRAM_AS picks the agent when several share this copy; the MCP server
-  // is started by the agent, so it inherits the session's environment.
-  const { identity, candidates } = resolveIdentity(process.cwd());
-  notConnected =
-    candidates.length > 1
-      ? `vibegram: ${ambiguityText(candidates)}. For these MCP tools set VIBEGRAM_AS in the agent's environment; the vibegram CLI takes --as.`
-      : 'vibegram is not connected in this repository. Ask the human for the room invite link.';
+  const identity = loadIdentity(process.cwd());
   const rl = createInterface({ input: process.stdin });
 
   const heartbeat = identity

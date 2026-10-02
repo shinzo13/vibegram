@@ -1,14 +1,6 @@
 #!/usr/bin/env node
 import * as api from './api.ts';
-import {
-  ambiguityText,
-  collectPaths,
-  currentBranch,
-  loadIdentity,
-  repoRoot,
-  resolveIdentity,
-  type Identity,
-} from './config.ts';
+import { collectPaths, currentBranch, loadIdentity, repoRoot, type Identity } from './config.ts';
 import { hookMain } from './hook.ts';
 import { mcpMain } from './mcp.ts';
 import { inspectHooks, runJoin, runLeave, runRoomCreate } from './init.ts';
@@ -40,41 +32,17 @@ const USAGE = `vibegram — coordination for coding agents in one repository
   vibegram plan propose "a" "b"         publish the plan (only while it is empty)
   vibegram plan ack                     agree with the current revision
   vibegram plan dispute "reason"        object
-  vibegram --as <nick> <command>        when several agents joined from one copy: say which one you are
-                                        (or set VIBEGRAM_AS=<nick> for the whole session)
   vibegram hook --dialect claude        hook handler mode (not for humans)
   vibegram mcp                          MCP server over stdio (not for humans)
 `;
 
 function identityOrDie(): Identity {
-  const { identity, candidates } = resolveIdentity(process.cwd());
+  const identity = loadIdentity(process.cwd());
   if (!identity) {
-    const as = process.env.VIBEGRAM_AS;
-    console.error(
-      candidates.length === 0
-        ? 'not in a room. Run: vibegram join <code|hub-link> --nick <codename>'
-        : as
-          ? `no agent called ${as} joined from this copy (here: ${candidates.join(', ')}). ` +
-            `To add one: vibegram join <code|hub-link> --nick ${as}`
-          : ambiguityText(candidates),
-    );
+    console.error('not in a room. Run: vibegram join <code|hub-link> --nick <codename>');
     process.exit(1);
   }
   return identity;
-}
-
-/**
- * `--as <nick>` may stand anywhere in the command: the hints an agent gets put
- * it right after the binary, a human tends to append it. Taken out here and
- * handed on through the environment, so every command resolves it the same way.
- */
-function takeAs(argv: string[]): string[] {
-  const i = argv.indexOf('--as');
-  if (i < 0) return argv;
-  const nick = argv[i + 1];
-  if (!nick || nick.startsWith('-')) throw new Error('--as needs a codename: vibegram --as claude-alice work');
-  process.env.VIBEGRAM_AS = nick;
-  return [...argv.slice(0, i), ...argv.slice(i + 2)];
 }
 
 /**
@@ -115,7 +83,7 @@ function positional(argv: string[], from: number): string[] {
 }
 
 async function main(): Promise<void> {
-  const argv = takeAs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
   const command = argv[0] ?? 'help';
 
   switch (command) {
@@ -130,15 +98,8 @@ async function main(): Promise<void> {
 
     case 'doctor': {
       const root = repoRoot(process.cwd());
-      const { identity, candidates } = resolveIdentity(process.cwd());
-      console.log(
-        identity
-          ? `room ${identity.roomId} as ${identity.nick}`
-          : candidates.length > 0
-            ? ambiguityText(candidates)
-            : 'not in a room',
-      );
-      if (candidates.length > 1) console.log(`agents in this copy: ${candidates.join(', ')}`);
+      const identity = loadIdentity(process.cwd());
+      console.log(identity ? `room ${identity.roomId} as ${identity.nick}` : 'not in a room');
       console.log(`repo: ${root}`);
       if (identity && identity.root !== root) {
         console.log(`! identity belongs to ${identity.root} — this is a different working copy`);

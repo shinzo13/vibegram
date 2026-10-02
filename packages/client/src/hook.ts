@@ -1,15 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as api from './api.ts';
-import {
-  HOME_DIR,
-  ambiguityText,
-  collectPaths,
-  logHook,
-  resolveIdentity,
-  toRelative,
-  type Identity,
-} from './config.ts';
+import { HOME_DIR, collectPaths, loadIdentity, logHook, toRelative, type Identity } from './config.ts';
 import { denyText, pendingText, planText } from './format.ts';
 import { looksLikeWrite, writeTargets } from './shell.ts';
 
@@ -44,44 +36,6 @@ function shouldPoll(key: string, intervalMs: number = POLL_INTERVAL_MS): boolean
   return true;
 }
 
-const SESSIONS_PATH = resolve(HOME_DIR, 'sessions.json');
-
-function readSessions(): Record<string, string> {
-  try {
-    return JSON.parse(readFileSync(SESSIONS_PATH, 'utf8')) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Which agent a session is, learned from the session itself.
- *
- * When several agents share a copy, the hook cannot tell them apart by
- * directory. But the agent names itself in its own commands — `vibegram --as
- * <nick> ...` — and the hook sees those commands go by, together with the
- * session id. One such command is enough to bind the session for good.
- */
-export function learnSession(session: string | null, command: string | undefined): void {
-  if (!session || !command?.includes('vibegram')) return;
-  const nick = /(?:--as\s+|VIBEGRAM_AS=)([a-z0-9]+(?:-[a-z0-9]+)+)/.exec(command)?.[1];
-  if (!nick) return;
-  const sessions = readSessions();
-  if (sessions[session] === nick) return;
-  sessions[session] = nick;
-  // Sessions come and go; the file must not grow forever.
-  const kept = Object.fromEntries(Object.entries(sessions).slice(-200));
-  try {
-    writeFileSync(SESSIONS_PATH, JSON.stringify(kept), { mode: 0o600 });
-  } catch {
-    // Not knowing the session only means not checking its writes.
-  }
-}
-
-export function sessionNick(session: string | null): string | null {
-  return session ? (readSessions()[session] ?? null) : null;
-}
-
 function allow(): string {
   return '{}';
 }
@@ -94,10 +48,6 @@ function contextClaude(event: string, context: string): string {
 
 interface HookInput {
   hook_event_name?: string;
-  /** Claude and codex. */
-  session_id?: string;
-  /** Cursor's name for the same thing. */
-  conversation_id?: string;
   tool_name?: string;
   cwd?: string;
   tool_input?: { file_path?: string; command?: string };
@@ -237,26 +187,11 @@ export async function runHook(argv: string[]): Promise<string> {
     flagIndex >= 0 ? ((argv[flagIndex + 1] ?? 'claude') as Dialect) : detectDialect(input);
 
   const cwd = input.cwd ?? process.cwd();
+  const identity = loadIdentity(cwd);
+  // Without registration the hook stays silent: `vibegram init` was never run.
+  if (!identity) return allow();
+
   const event = input.hook_event_name ?? '';
-  const session = input.session_id ?? input.conversation_id ?? null;
-  learnSession(session, input.tool_input?.command ?? input.command);
-
-  const { identity, candidates } = resolveIdentity(cwd, process.env.VIBEGRAM_AS ?? sessionNick(session));
-  if (!identity) {
-    // Several agents share this copy and this session has not said which it is.
-    // Its writes cannot be checked yet, so it is told how to fix that — at the
-    // start and then now and again, not on every call.
-    const tell =
-      candidates.length > 1 &&
-      dialect === 'claude' &&
-      (event === 'SessionStart' || (event === 'PostToolUse' && shouldPoll(`who-${session ?? 'none'}`, 5 * 60_000)));
-    if (tell) {
-      return contextClaude(event, `vibegram: ${ambiguityText(candidates)}. Until then your writes are not checked against claims.`);
-    }
-    // Without registration the hook stays silent: `vibegram join` was never run.
-    return allow();
-  }
-
   const tool = input.tool_name ?? '';
 
   switch (event) {
@@ -287,8 +222,7 @@ export async function runHook(argv: string[]): Promise<string> {
 
     case 'PostToolUse':
     case 'postToolUse':
-      // Per agent: two agents in one copy must not swallow each other's updates.
-      if (!shouldPoll(`${identity.roomId}-${identity.nick}`)) return allow();
+      if (!shouldPoll(identity.roomId)) return allow();
       return handleContext(identity, 'PostToolUse');
 
     case 'SessionStart':

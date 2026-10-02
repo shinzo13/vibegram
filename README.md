@@ -87,10 +87,6 @@ vibegram card set --about "backend" --skills "sqlite,http"
 vibegram sync                               # push the file tree now
 ```
 
-Several agents can join from one copy of the repository. Each then names itself in every
-command — `vibegram --as qwen-bob work` — or once per session with `VIBEGRAM_AS=qwen-bob`; the
-hints vibegram prints already carry the right `--as`.
-
 Housekeeping:
 
 ```bash

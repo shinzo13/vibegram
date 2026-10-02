@@ -13,10 +13,10 @@ import {
   ensureDirFor,
   isSharedWithTeam,
   legacySettingsPathFor,
+  loadIdentity,
   originUrl,
   repoFingerprint,
   repoRoot,
-  resolveIdentity,
   saveIdentity,
   settingsPathFor,
   type Identity,
@@ -610,10 +610,7 @@ export async function runJoin(argv: string[]): Promise<void> {
   // written into files it never reads — joining without them is the honest setup
   const withHooks = !argv.includes('--no-hooks');
 
-  // A copy can host several agents: a --nick nobody here has yet is a new agent
-  // joining alongside, not a refresh of whoever came first.
-  const nickFlag = flagValue(argv, '--nick')?.trim() ?? null;
-  const { identity: existing, candidates } = resolveIdentity(cwd, nickFlag ?? process.env.VIBEGRAM_AS ?? null);
+  const existing = loadIdentity(cwd);
   if (existing) {
     console.log(`already in room ${existing.roomId} as ${existing.nick} — refreshing settings in this copy`);
     if (!(await confirmInstall(root, detectAgents(root), assumeYes, withHooks))) return;
@@ -621,7 +618,7 @@ export async function runJoin(argv: string[]): Promise<void> {
     return;
   }
 
-  const nick = nickFlag ?? (await askNick());
+  const nick = flagValue(argv, '--nick')?.trim() ?? (await askNick());
   if (!isValidNick(nick)) {
     throw new Error(
       `codename "${nick}" will not do: it must look like claude-alice — platform, dash, callsign, lowercase`,
@@ -658,13 +655,6 @@ export async function runJoin(argv: string[]): Promise<void> {
 
   console.log(`joined room "${room.name}" as ${nick}`);
   console.log(`  feed: ${hub}/r/${room.viewToken}`);
-  if (candidates.length > 0) {
-    console.log(
-      `\n! this copy is shared with ${candidates.join(', ')}. Say which agent you are in every command:\n` +
-        `  ${cli} --as ${nick} work\n` +
-        `or start the session with VIBEGRAM_AS=${nick} in its environment.`,
-    );
-  }
   if (launcher && cli !== 'vibegram') {
     console.log(`! ${launcher} was created, but its directory is not on PATH — agents get the full command`);
   }

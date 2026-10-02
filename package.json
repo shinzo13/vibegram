@@ -19,9 +19,8 @@
     "test:join": "node packages/client/test/join-target.ts",
     "test:install": "node packages/client/test/install.ts",
     "test:heartbeat": "node packages/client/test/heartbeat.ts",
-    "test:identity": "node packages/client/test/identity.ts",
     "test:load": "node packages/hub/test/load.ts",
-    "test": "npm run smoke && npm run test:shell && npm run test:join && npm run test:install && npm run test:heartbeat && npm run test:identity && npm run test:load && npm run test:web",
+    "test": "npm run smoke && npm run test:shell && npm run test:join && npm run test:install && npm run test:heartbeat && npm run test:load && npm run test:web",
     "snapshot": "node --conditions=browser packages/web/test/snapshot.js"
   }
 }
