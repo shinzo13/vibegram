@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isValidNick } from '../../protocol/src/index.ts';
+import { agentRules, cleanRepoUrl, isValidNick } from '../../protocol/src/index.ts';
 import * as api from './api.ts';
 import {
   DEFAULT_HUB,
@@ -14,6 +14,7 @@ import {
   isSharedWithTeam,
   legacySettingsPathFor,
   loadIdentity,
+  originUrl,
   repoFingerprint,
   repoRoot,
   saveIdentity,
@@ -278,6 +279,46 @@ export function installSkill(root: string): string {
   return target;
 }
 
+const RULES_START = '<!-- vibegram:start -->';
+const RULES_END = '<!-- vibegram:end -->';
+
+/**
+ * The working rules, in AGENTS.md.
+ *
+ * AGENTS.md is the one place agents of every make look for project rules, so
+ * this is how an agent nobody configured still learns that files get claimed
+ * here. The block sits between markers and is replaced in place, never
+ * duplicated; the rest of the file is the team's. It names the bare `vibegram`
+ * command and carries no secrets — the file travels in git.
+ */
+export function installRules(root: string): string {
+  const path = resolve(root, 'AGENTS.md');
+  const block = [
+    RULES_START,
+    '## vibegram',
+    '',
+    'Several coding agents work in this repository at once and coordinate through vibegram.',
+    'Claim a file before editing it. If `vibegram` is not installed, ask your human for the',
+    "room's invite link and follow it.",
+    '',
+    agentRules(),
+    RULES_END,
+  ].join('\n');
+
+  const current = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  const start = current.indexOf(RULES_START);
+  const end = current.indexOf(RULES_END);
+  const next =
+    start >= 0 && end > start
+      ? current.slice(0, start) + block + current.slice(end + RULES_END.length)
+      : current === ''
+        ? `${block}\n`
+        : `${current.replace(/\n*$/, '')}\n\n${block}\n`;
+
+  if (next !== current) writeFileSync(path, next);
+  return path;
+}
+
 /**
  * Says what will be written before writing it, and waits for a yes.
  *
@@ -294,6 +335,7 @@ export async function confirmInstall(
 ): Promise<boolean> {
   console.log('\nvibegram will write to:');
   console.log(`  ${resolve(root, '.mcp.json')} — mcp server entry`);
+  console.log(`  ${resolve(root, 'AGENTS.md')} — working rules for any agent (shared with the team, travels in git)`);
   if (withHooks) {
     for (const agent of detected) {
       const shared = isSharedWithTeam(agent.dialect) ? ' (shared with the team, travels in git)' : '';
@@ -333,6 +375,7 @@ export async function confirmInstall(
  */
 function installEverything(root: string, withHooks = true): DetectedAgent[] {
   console.log(`  mcp: ${installMcpServer(root)}`);
+  console.log(`  rules: ${installRules(root)}`);
 
   const detected = detectAgents(root);
   if (!withHooks) {
@@ -388,19 +431,27 @@ export async function runRoomCreate(argv: string[]): Promise<void> {
   const hub = flagValue(argv, '--hub') ?? DEFAULT_HUB;
   const name = flagValue(argv, '--name') ?? repoRoot(process.cwd()).split('/').pop() ?? 'room';
 
-  const { room, joinCode } = await api.createRoom(hub, name);
+  // The invite tells a newcomer where to clone from; this clone's origin is the
+  // obvious answer when nobody gave one.
+  const repoFlag = flagValue(argv, '--repo');
+  const repoUrl = cleanRepoUrl(repoFlag ?? originUrl(process.cwd()));
+  if (repoFlag && !repoUrl) throw new Error(`"${repoFlag}" is not an https, ssh or git@host:owner/repo address`);
+
+  const { room, joinCode } = await api.createRoom(hub, name, repoUrl);
+  const base = hub.replace(/\/+$/, '');
 
   console.log(`room "${room.name}" created on ${hub}\n`);
-  console.log(`  join code:  ${joinCode}`);
-  console.log(`  feed link:  ${hub}/r/${room.viewToken}\n`);
-  console.log('Pass the join code to your team — it lets an agent in:');
-  console.log(`  vibegram join ${hub.replace(/\/+$/, '')}/${joinCode} --nick <codename>\n`);
+  console.log(`  invite:     ${base}/${joinCode}`);
+  console.log(`  feed link:  ${base}/r/${room.viewToken}`);
+  console.log(`  repository: ${repoUrl ?? 'unknown — set it with: vibegram room repo <url>'}\n`);
+  console.log('Send the invite to anyone whose agent should join — it is a secret, and the');
+  console.log('whole message: any agent that can read a link and run a shell follows it.\n');
   console.log('The feed link is read-only and safe to show anywhere.');
   console.log('If the code leaks, issue a new one: vibegram room rotate');
 }
 
 /** Flags that take a value: their value must not be mistaken for the join code. */
-const VALUE_FLAGS = new Set(['--nick', '--hub', '--name']);
+const VALUE_FLAGS = new Set(['--nick', '--hub', '--name', '--repo']);
 
 function firstPositional(argv: string[], from: number): string | null {
   for (let i = from; i < argv.length; i += 1) {
@@ -579,7 +630,7 @@ export async function runJoin(argv: string[]): Promise<void> {
     console.log('! this repository has no commits yet — the room will remember it on the first commit');
   }
 
-  const { token, room } = await api.joinRoom(hub, joinCode, nick, fingerprint);
+  const { token, room } = await api.joinRoom(hub, joinCode, nick, fingerprint, cleanRepoUrl(originUrl(cwd)));
 
   // Asked after the join rather than before it: an agent in the room without
   // hooks still coordinates by hand, while a refused join leaves nothing at all.

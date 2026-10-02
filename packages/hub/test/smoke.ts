@@ -436,6 +436,56 @@ check(
   { count: openedIds.length, first: openedIds[0], last: openedIds.at(-1), expectedLast: paged.at(-1) },
 );
 
+// ─── invite ──────────────────────────────────────────────────────────────────
+
+const invited = await call('POST', '/api/rooms', { name: 'koshechki' });
+const inviteCode = invited.body.joinCode as string;
+check('a room starts with no repository unless told', invited.body.room.repoUrl === null);
+
+const firstIn = await call('POST', '/api/rooms/join', {
+  joinCode: inviteCode,
+  nick: 'qwen-first',
+  repoUrl: 'https://tok:secret@github.com/team/koshechki.git',
+});
+await call('POST', '/api/rooms/join', { joinCode: inviteCode, nick: 'kimi-second', repoUrl: 'https://github.com/someone/fork' });
+const afterJoins = await call('GET', '/api/room', undefined, firstIn.body.token);
+check(
+  'the first joiner records the repository, credentials stripped, later ones do not overwrite',
+  afterJoins.body.room.repoUrl === 'https://github.com/team/koshechki.git',
+  afterJoins.body.room,
+);
+
+const inviteRes = await fetch(`${base}/${inviteCode}`);
+const inviteBody = await inviteRes.text();
+check(
+  'the invite is plain text with the clone, the code and the hub filled in',
+  inviteRes.status === 200 &&
+    (inviteRes.headers.get('content-type') ?? '').startsWith('text/markdown') &&
+    inviteBody.includes('git clone https://github.com/team/koshechki.git && cd koshechki') &&
+    inviteBody.includes(`/install.sh | sh -s -- ${inviteCode} --nick <codename>`) &&
+    inviteBody.includes(base),
+  inviteBody.slice(0, 300),
+);
+check('the invite never leaks the credentials it was given', !inviteBody.includes('secret'));
+
+const invitePage = await fetch(`${base}/${inviteCode}`, { headers: { accept: 'text/html' } });
+const invitePageBody = await invitePage.text();
+check(
+  'a browser gets a page carrying the same text',
+  (invitePage.headers.get('content-type') ?? '').startsWith('text/html') && invitePageBody.includes(inviteCode),
+);
+
+const deadInvite = await fetch(`${base}/aaaa-bbbb`);
+check('an unknown code is a 404 that says to ask for a fresh link', deadInvite.status === 404 && (await deadInvite.text()).includes('fresh link'));
+
+const fixed = await call('POST', '/api/room/repo', { repoUrl: 'git@github.com:team/koshechki.git' }, firstIn.body.token);
+const rejected = await call('POST', '/api/room/repo', { repoUrl: 'file:///etc' }, firstIn.body.token);
+check(
+  'the repository can be set on purpose, and nonsense is refused',
+  fixed.body.room?.repoUrl === 'git@github.com:team/koshechki.git' && rejected.status === 400,
+  [fixed.body, rejected.body],
+);
+
 const missing = await call('GET', '/api/nonexistent');
 check(
   'an /api miss is an honest 404, not the SPA fallback',

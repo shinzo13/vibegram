@@ -17,6 +17,7 @@ import {
   inspectHooks,
   installClaudeHooks,
   installMcpServer,
+  installRules,
   ownsCommand,
   runLeave,
 } from '../src/init.ts';
@@ -136,6 +137,29 @@ console.log('\n— joining without hooks —');
   // the hooks are not, and doctor must not pretend otherwise
   check('mcp entry is written', existsSync(resolve(root, '.mcp.json')));
   check('no hooks are reported', inspectHooks(root).every((h) => !h.installed));
+  rmSync(root, { recursive: true, force: true });
+}
+
+console.log('\n— rules in AGENTS.md —');
+{
+  const root = tempRepo();
+  const path = resolve(root, 'AGENTS.md');
+  installRules(root);
+  const fresh = readFileSync(path, 'utf8');
+  check('a missing AGENTS.md is created with the block', fresh.startsWith('<!-- vibegram:start -->') && fresh.includes('vibegram claim'));
+
+  writeFileSync(path, `# team rules\n\nbe nice\n\n${fresh}\nafter us\n`);
+  installRules(root);
+  installRules(root);
+  const again = readFileSync(path, 'utf8');
+  check(
+    'a second join replaces the block in place: one copy, the team text around it untouched',
+    again.split('<!-- vibegram:start -->').length === 2 &&
+      again.startsWith('# team rules\n\nbe nice\n') &&
+      again.trimEnd().endsWith('after us'),
+    again,
+  );
+  check('the block carries no absolute paths — the file travels in git', !again.includes(root) && !again.includes('cli.ts'));
   rmSync(root, { recursive: true, force: true });
 }
 

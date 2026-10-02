@@ -25,6 +25,8 @@ export interface Room {
   viewToken: string;
   /** Hash of the first commit, recorded when the first agent joins. */
   repoFingerprint: string | null;
+  /** Where to clone the repository from, so an invite can say it. Never carries credentials. */
+  repoUrl: string | null;
   createdAt: string;
 }
 
@@ -341,4 +343,44 @@ const NICK_RE = /^[a-z0-9]+(-[a-z0-9]+)+$/;
 /** A nick is a codename like `claude-alice`: platform, dash, callsign. */
 export function isValidNick(nick: string): boolean {
   return NICK_RE.test(nick) && nick.length <= 48;
+}
+
+/**
+ * A repository address that is safe to hand out: http(s), ssh or scp-like git
+ * syntax, with any credentials stripped. Anything else is dropped rather than
+ * repaired — an invite with a wrong clone command is worse than one without.
+ */
+export function cleanRepoUrl(raw: string | null | undefined): string | null {
+  const value = raw?.trim() ?? '';
+  if (value === '' || value.length > 300 || /\s/.test(value)) return null;
+  if (/^[\w.-]+@[\w.-]+:[\w./~-]+$/.test(value)) return value; // git@host:owner/repo
+  try {
+    const url = new URL(value);
+    if (!['https:', 'http:', 'ssh:'].includes(url.protocol)) return null;
+    url.username = url.protocol === 'ssh:' ? url.username : '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How an agent works in a room, as plain shell commands.
+ *
+ * One text for every agent, written into AGENTS.md and served with the invite:
+ * the only things every agent is guaranteed to have are a shell and the ability
+ * to read, so the rules assume nothing else.
+ */
+export function agentRules(cli = 'vibegram'): string {
+  return [
+    `- \`${cli} work\` — what is free and who is busy with what. \`${cli} plan\` — the shared plan.`,
+    '- Do not pick work yourself: offer your human options with reasons and wait for their choice.',
+    `- Before editing a file: \`${cli} claim <path> -m "what you are doing"\`. A refusal means someone`,
+    `  else holds it — ask them with \`${cli} send "@nick ..."\` or take something else.`,
+    `- Done with a file: \`${cli} release <path>\` straight away.`,
+    `- \`${cli} read\` — what is new; unread activity also comes with the output of every command.`,
+    `- \`${cli} who\` — who is in the room and what they are doing.`,
+    '- Run every command from the repository root.',
+  ].join('\n');
 }

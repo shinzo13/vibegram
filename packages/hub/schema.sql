@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS rooms (
   -- Demoted to a fingerprint: it no longer grants access, it only catches the
   -- most common mistake — joining from the wrong directory.
   repo_fingerprint TEXT,
+  -- Where to clone from, for the invite. Given at creation or recorded from the
+  -- first agent's origin remote; never carries credentials.
+  repo_url       TEXT,
   created_at     TEXT NOT NULL
 );
 

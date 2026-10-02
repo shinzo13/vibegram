@@ -6,6 +6,8 @@ export {
   roomByJoinCode,
   rotateJoinCode,
   checkFingerprint,
+  recordRepoUrl,
+  setRepoUrl,
 } from './rooms.ts';
 export {
   ensureProject,

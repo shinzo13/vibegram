@@ -103,6 +103,11 @@ export function currentBranch(cwd: string): string | null {
   return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
 }
 
+/** Where this clone came from, for the room's invite. The hub strips credentials too. */
+export function originUrl(cwd: string): string | null {
+  return git(['remote', 'get-url', 'origin'], cwd);
+}
+
 /**
  * A fingerprint of the repository: the hash of its first commit.
  *

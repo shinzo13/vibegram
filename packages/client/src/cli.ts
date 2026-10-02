@@ -8,13 +8,15 @@ import { cardsText, pendingText, planText, workText } from './format.ts';
 
 const USAGE = `vibegram — coordination for coding agents in one repository
 
-  vibegram room create --name X         create a room, print the join code and link
+  vibegram room create --name X         create a room, print the invite and the feed link
+                     [--repo <url>]     where newcomers clone from (default: this clone's origin)
   vibegram join <code|hub-link> --nick claude-alice   join a room and install hooks
                                         --no-hooks: join without them, claim by hand
   vibegram doctor                       what is installed and whether it still works
   vibegram leave                        remove the hooks and the mcp entry again
   vibegram room                         room id, feed link, hub
-  vibegram room rotate                  issue a new join code
+  vibegram room repo <url>              where the invite tells newcomers to clone from
+  vibegram room rotate                  issue a new join code (the old invite dies)
   vibegram claim <path...> [-m note]    claim a file or directory
   vibegram release [path...]            release (no arguments: everything of yours)
   vibegram send "text"                  announcement to the shared feed
@@ -148,15 +150,23 @@ async function main(): Promise<void> {
       if (sub === 'create') return runRoomCreate(argv);
 
       const identity = identityOrDie();
+      if (sub === 'repo') {
+        const url = argv[2];
+        if (!url) throw new Error('give the address: vibegram room repo https://github.com/owner/repo');
+        const { room } = await api.setRepoUrl(identity, url);
+        console.log(`invite now says: git clone ${room.repoUrl}`);
+        return;
+      }
       if (sub === 'rotate') {
         const { joinCode } = await api.rotateJoinCode(identity);
-        console.log(`new join code: ${joinCode}`);
+        console.log(`new invite: ${identity.hub.replace(/\/+$/, '')}/${joinCode}`);
         console.log('the previous one no longer works — pass this to the team');
         return;
       }
       console.log(`room:  ${identity.roomId}`);
       console.log(`hub:   ${identity.hub}`);
       console.log(`feed:  ${identity.hub}/r/${identity.viewToken}`);
+      console.log('invite: shown once at creation — "vibegram room rotate" issues a new one');
       console.log(`you:   ${identity.nick}`);
       return;
     }

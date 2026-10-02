@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { Agent, Event } from '../../../protocol/src/index.ts';
 import { PROTOCOL_VERSION, isRelativeResource } from '../../../protocol/src/index.ts';
 import * as core from '../core/index.ts';
+import { INVITE_PATH, sendInvite } from './invite.ts';
 import type { Ctx } from '../core/index.ts';
 
 interface Req {
@@ -113,7 +114,7 @@ const routes: Record<string, Handler> = {
   /** Creating a room hands back its secrets once — the join code is stored hashed. */
   'POST /api/rooms': ({ ctx, body }) => {
     const name = field<string>(body, 'name') ?? '';
-    const { room, joinCode } = core.createRoom(ctx, name);
+    const { room, joinCode } = core.createRoom(ctx, name, field<string>(body, 'repoUrl') ?? null);
     return { room, joinCode };
   },
 
@@ -138,6 +139,7 @@ const routes: Record<string, Handler> = {
 
     const nick = requireString(body, 'nick');
     const result = core.joinRoom(ctx, room.id, nick);
+    if (result.ok) core.recordRepoUrl(ctx, room.id, field<string>(body, 'repoUrl'));
     if (!result.ok) {
       const message =
         result.error === 'nick_taken'
@@ -152,6 +154,14 @@ const routes: Record<string, Handler> = {
   'POST /api/rooms/rotate': (req) => {
     const agent = requireAgent(req);
     return { joinCode: core.rotateJoinCode(req.ctx, agent.roomId) };
+  },
+
+  /** Fixing the clone address the invite hands out: a fork got recorded, or none at all. */
+  'POST /api/room/repo': (req) => {
+    const agent = requireAgent(req);
+    const repoUrl = core.setRepoUrl(req.ctx, agent.roomId, requireString(req.body, 'repoUrl'));
+    if (!repoUrl) throw new HttpError(400, 'bad_repo_url', 'expected an https, ssh or git@host:owner/repo address');
+    return { room: core.getRoom(req.ctx, agent.roomId) };
   },
 
   'GET /api/room': (req) => {
@@ -584,6 +594,11 @@ export function createHttpServer(
 
       if (req.method === 'GET' && url.pathname === '/client.tar.gz') {
         return sendClientArchive(res);
+      }
+
+      const invite = req.method === 'GET' ? INVITE_PATH.exec(url.pathname) : null;
+      if (invite) {
+        return sendInvite(res, core.roomByJoinCode(ctx, invite[1]!), invite[1]!, publicOrigin(req), req.headers.accept);
       }
 
       const key = `${req.method} ${url.pathname}`;

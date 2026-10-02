@@ -65,8 +65,12 @@ export async function call<T>(
   }
 }
 
-export function createRoom(hub: string, name: string): Promise<{ room: any; joinCode: string }> {
-  return call({ hub, token: '' }, 'POST', '/api/rooms', { name });
+export function createRoom(
+  hub: string,
+  name: string,
+  repoUrl: string | null,
+): Promise<{ room: any; joinCode: string }> {
+  return call({ hub, token: '' }, 'POST', '/api/rooms', { name, repoUrl });
 }
 
 export function joinRoom(
@@ -74,8 +78,13 @@ export function joinRoom(
   joinCode: string,
   nick: string,
   fingerprint: string | null,
+  repoUrl: string | null,
 ): Promise<{ token: string; agent: any; room: any }> {
-  return call({ hub, token: '' }, 'POST', '/api/rooms/join', { joinCode, nick, fingerprint });
+  return call({ hub, token: '' }, 'POST', '/api/rooms/join', { joinCode, nick, fingerprint, repoUrl });
+}
+
+export function setRepoUrl(identity: Identity, repoUrl: string): Promise<{ room: any }> {
+  return call(identity, 'POST', '/api/room/repo', { repoUrl });
 }
 
 export function rotateJoinCode(identity: Identity): Promise<{ joinCode: string }> {

@@ -32,6 +32,9 @@ function migrate(db: DatabaseSync): void {
   if (!columns('agents').includes('hooks_seen_at')) {
     db.exec('ALTER TABLE agents ADD COLUMN hooks_seen_at TEXT');
   }
+  if (!columns('rooms').includes('repo_url')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN repo_url TEXT');
+  }
 }
 
 export function nowIso(): string {

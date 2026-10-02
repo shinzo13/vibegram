@@ -1,5 +1,5 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
-import type { Room, RoomSecrets } from '../../../protocol/src/index.ts';
+import { cleanRepoUrl, type Room, type RoomSecrets } from '../../../protocol/src/index.ts';
 import { nowIso } from '../db.ts';
 import type { Ctx } from './ctx.ts';
 
@@ -47,6 +47,7 @@ interface RoomRow {
   name: string;
   view_token: string;
   repo_fingerprint: string | null;
+  repo_url: string | null;
   created_at: string;
 }
 
@@ -56,11 +57,12 @@ function rowToRoom(row: RoomRow): Room {
     name: row.name,
     viewToken: row.view_token,
     repoFingerprint: row.repo_fingerprint,
+    repoUrl: row.repo_url,
     createdAt: row.created_at,
   };
 }
 
-const ROOM_COLS = 'id, name, view_token, repo_fingerprint, created_at';
+const ROOM_COLS = 'id, name, view_token, repo_fingerprint, repo_url, created_at';
 
 /**
  * Creates a room and returns its secrets once.
@@ -68,7 +70,7 @@ const ROOM_COLS = 'id, name, view_token, repo_fingerprint, created_at';
  * The join code is stored hashed: a hub database that leaks must not hand out
  * the way into every room with it.
  */
-export function createRoom(ctx: Ctx, name: string): RoomSecrets {
+export function createRoom(ctx: Ctx, name: string, repoUrl: string | null = null): RoomSecrets {
   // Short id: it is quoted in error messages and logs, and never used as a
   // credential — the join code and the view token are.
   const id = randomCode(8);
@@ -77,10 +79,10 @@ export function createRoom(ctx: Ctx, name: string): RoomSecrets {
 
   ctx.db
     .prepare(
-      `INSERT INTO rooms (id, name, join_code_hash, view_token, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO rooms (id, name, join_code_hash, view_token, repo_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, name.trim() === '' ? id : name.trim(), hash(joinCode), viewToken, nowIso());
+    .run(id, name.trim() === '' ? id : name.trim(), hash(joinCode), viewToken, cleanRepoUrl(repoUrl), nowIso());
 
   ctx.db
     .prepare(`INSERT INTO plan_notes (room_id, body, version, updated_at) VALUES (?, '', 0, ?)`)
@@ -144,4 +146,22 @@ export function checkFingerprint(ctx: Ctx, roomId: string, fingerprint: string |
     return { ok: true };
   }
   return room.repoFingerprint === fingerprint ? { ok: true } : { ok: false, expected: room.repoFingerprint };
+}
+
+/**
+ * Records where the repository lives, the first time anyone says. Like the
+ * fingerprint it is taken from whoever joins first; unlike it, a later answer is
+ * not checked against it — clones legitimately point at forks and mirrors.
+ */
+export function recordRepoUrl(ctx: Ctx, roomId: string, repoUrl: string | null | undefined): void {
+  const clean = cleanRepoUrl(repoUrl);
+  if (!clean) return;
+  ctx.db.prepare('UPDATE rooms SET repo_url = ? WHERE id = ? AND repo_url IS NULL').run(clean, roomId);
+}
+
+/** Set on purpose by someone in the room: replaces whatever was recorded. */
+export function setRepoUrl(ctx: Ctx, roomId: string, repoUrl: string): string | null {
+  const clean = cleanRepoUrl(repoUrl);
+  if (clean) ctx.db.prepare('UPDATE rooms SET repo_url = ? WHERE id = ?').run(clean, roomId);
+  return clean;
 }
