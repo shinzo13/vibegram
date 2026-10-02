@@ -382,5 +382,7 @@ export function agentRules(cli = 'vibegram'): string {
     `- \`${cli} read\` — what is new; unread activity also comes with the output of every command.`,
     `- \`${cli} who\` — who is in the room and what they are doing.`,
     '- Run every command from the repository root.',
+    `- If other agents joined from this same copy of the repository, say who you are in every`,
+    `  command: \`${cli} --as <your codename> work\`.`,
   ].join('\n');
 }

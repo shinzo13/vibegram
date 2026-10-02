@@ -38,7 +38,11 @@ export interface Identity {
 
 interface ConfigFile {
   hub: string;
-  /** Keyed by the repository root: the same clone always belongs to one room. */
+  /**
+   * Keyed by `<root>#<nick>`: one working copy can host several agents, each
+   * with its own nick and token. Older clients keyed by the bare root; those
+   * entries are still read, and rewritten on the next join.
+   */
   identities: Record<string, Omit<Identity, 'hub'>>;
 }
 
@@ -53,7 +57,8 @@ function readConfig(): ConfigFile {
 export function saveIdentity(identity: Identity): void {
   const config = readConfig();
   config.hub = identity.hub;
-  config.identities[identity.root] = {
+  if (config.identities[identity.root]?.nick === identity.nick) delete config.identities[identity.root];
+  config.identities[`${identity.root}#${identity.nick}`] = {
     nick: identity.nick,
     token: identity.token,
     roomId: identity.roomId,
@@ -68,22 +73,57 @@ export function saveIdentity(identity: Identity): void {
 
 const CLI_ENTRY = resolve(dirname(fileURLToPath(import.meta.url)), 'cli.ts');
 
-export function loadIdentity(cwd: string): Identity | null {
+export type Resolution =
+  | { identity: Identity; candidates: string[] }
+  | { identity: null; candidates: string[] };
+
+/**
+ * Which agent this is, among those that joined from this working copy.
+ *
+ * One agent per copy is the common case and needs nothing. With several, the
+ * copy alone cannot tell them apart — the files are literally shared — so the
+ * agent names itself: `--as <nick>` on the command line, or VIBEGRAM_AS in its
+ * environment. Every hint it is given then carries the `--as` too, so the
+ * command it copies is the one that works.
+ */
+export function resolveIdentity(cwd: string, as: string | null = process.env.VIBEGRAM_AS ?? null): Resolution {
   const config = readConfig();
+  const root = repoRoot(cwd);
   // Identities used to be keyed by a project hash rather than a path. Those
   // entries stay in the file forever and answer to nobody; skipping anything
   // that is not an absolute path keeps a stale one from being picked up.
-  const entry = Object.entries(config.identities).find(
-    ([key]) => key === repoRoot(cwd) && key.startsWith('/'),
-  )?.[1];
-  if (!entry) return null;
+  const here = Object.entries(config.identities)
+    .filter(([key, entry]) => key.startsWith('/') && (entry.root ?? key) === root)
+    .map(([, entry]) => entry);
+  const candidates = here.map((e) => e.nick);
+
+  const entry = as ? here.find((e) => e.nick === as) : here.length === 1 ? here[0] : undefined;
+  if (!entry) return { identity: null, candidates };
+
+  // A config written by an older client has no cli field. Without a fallback
+  // the agent would be told to run "undefined send".
+  const cli = entry.cli ?? `node ${CLI_ENTRY}`;
   return {
-    ...entry,
-    hub: config.hub ?? DEFAULT_HUB,
-    // A config written by an older client has no cli field. Without a fallback
-    // the agent would be told to run "undefined send".
-    cli: entry.cli ?? `node ${CLI_ENTRY}`,
+    identity: {
+      ...entry,
+      root,
+      hub: config.hub ?? DEFAULT_HUB,
+      cli: here.length > 1 ? `${cli} --as ${entry.nick}` : cli,
+    },
+    candidates,
   };
+}
+
+export function loadIdentity(cwd: string, as?: string | null): Identity | null {
+  return resolveIdentity(cwd, as).identity;
+}
+
+/** What to tell an agent the copy cannot identify on its own. */
+export function ambiguityText(candidates: string[]): string {
+  return (
+    `several agents joined from this copy (${candidates.join(', ')}) — say which one you are: ` +
+    `add --as <your codename> to the command, or set VIBEGRAM_AS=<your codename> for the session`
+  );
 }
 
 function git(args: string[], cwd: string): string | null {
