@@ -382,5 +382,7 @@ export function agentRules(cli = 'vibegram'): string {
     `- \`${cli} read\` — what is new; unread activity also comes with the output of every command.`,
     `- \`${cli} who\` — who is in the room and what they are doing.`,
     '- Run every command from the repository root.',
+    '- One copy of the repository per agent: never share a directory with another agent. For a',
+    '  second agent on the same machine use `git worktree add ../<repo>-<codename>`.',
   ].join('\n');
 }

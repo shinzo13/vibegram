@@ -611,6 +611,18 @@ export async function runJoin(argv: string[]): Promise<void> {
   const withHooks = !argv.includes('--no-hooks');
 
   const existing = loadIdentity(cwd);
+  const nickFlag = flagValue(argv, '--nick')?.trim();
+  // One copy, one agent: two agents in one directory edit the same files on
+  // disk, and no claim stops that. A second agent gets a copy of its own.
+  if (existing && nickFlag && nickFlag !== existing.nick) {
+    const name = root.split('/').pop();
+    throw new Error(
+      `this copy already belongs to ${existing.nick} — every agent needs its own copy of the repository.\n` +
+        `Make one and join from there:\n` +
+        `  git worktree add ../${name}-${nickFlag} && cd ../${name}-${nickFlag}\n` +
+        `  vibegram join ${joinCode} --nick ${nickFlag} --yes`,
+    );
+  }
   if (existing) {
     console.log(`already in room ${existing.roomId} as ${existing.nick} — refreshing settings in this copy`);
     if (!(await confirmInstall(root, detectAgents(root), assumeYes, withHooks))) return;
