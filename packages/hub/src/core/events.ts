@@ -177,8 +177,9 @@ export function pendingFor(ctx: Ctx, agent: Agent, limit = 50, since?: number, l
   const events: Event[] = [];
   let skipped = 0;
   for (const event of window) {
-    // An agent's own events are of no use to it and do not count as skipped.
-    if (event.agentId === agent.id) continue;
+    // An agent's own events are of no use to it as news and do not count as
+    // skipped; looking back, they are part of the history it asked for.
+    if (event.agentId === agent.id && !rewinding) continue;
     if (isRelevant(ctx, agent, event, myResources)) events.push(event);
     else skipped += 1;
   }

@@ -30,8 +30,8 @@ export function denyText(resource: string, conflict: ClaimConflict, cli: string)
   ].join(' ');
 }
 
-function eventLine(event: Event): string | null {
-  const who = event.nick ?? 'system';
+function eventLine(event: Event, selfNick?: string): string | null {
+  const who = event.nick === null ? 'system' : event.nick === selfNick ? `${event.nick} (you)` : event.nick;
   switch (event.kind) {
     case 'message':
       return `${who}: ${(event.payload as MessagePayload).body}`;
@@ -58,12 +58,12 @@ function eventLine(event: Event): string | null {
  * The digest mixed into an agent's context. Deliberately short: this is
  * background noticed in passing, not a document to read.
  */
-export function pendingText(pending: Pending, cli: string, rewinding = false): string | null {
+export function pendingText(pending: Pending, cli: string, rewinding = false, selfNick?: string): string | null {
   // Event ids only when looking back: they are what a rewind takes as its
   // starting point, and noise in the everyday digest.
   const lines = pending.events
     .map((e) => {
-      const line = eventLine(e);
+      const line = eventLine(e, selfNick);
       return line === null ? null : rewinding ? `#${e.id} ${line}` : line;
     })
     .filter((l): l is string => l !== null);

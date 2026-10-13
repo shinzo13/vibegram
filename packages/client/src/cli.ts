@@ -234,7 +234,7 @@ async function main(): Promise<void> {
 
       const rewinding = rewind.since !== undefined || rewind.last !== undefined;
       const pending = await api.pending(identity, limit, false, rewind);
-      const text = pendingText(pending, identity.cli, rewinding);
+      const text = pendingText(pending, identity.cli, rewinding, identity.nick);
       console.log(text ?? (rewinding ? 'nothing in that range' : 'nothing new'));
       return;
     }

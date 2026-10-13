@@ -200,6 +200,13 @@ check(
   (sinceFirst.body.events as any[]).map((e) => e.id),
 );
 
+const ownRewound = await call('GET', '/api/pending?last=50', undefined, tokenA);
+check(
+  'looking back includes own messages',
+  (ownRewound.body.events as any[]).some((e) => e.kind === 'message' && e.nick === 'claude-alice'),
+  (ownRewound.body.events as any[]).map((e) => `${e.kind}:${e.nick}`),
+);
+
 const badSince = await call('GET', '/api/pending?since=nope', undefined, tokenB);
 check('a nonsense since is refused', badSince.status === 400, badSince.body);
 
