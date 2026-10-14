@@ -114,9 +114,18 @@ export function markHooksAlive(ctx: Ctx, agentId: string): void {
 }
 
 export function heartbeat(ctx: Ctx, agentId: string): void {
-  ctx.db
-    .prepare("UPDATE agents SET last_seen_at = ?, status = 'online' WHERE id = ?")
-    .run(nowIso(), agentId);
+  const now = nowIso();
+  // Coming back from offline is a join as far as the room can tell: it saw
+  // the leave, so it should see the return.
+  const back = ctx.db
+    .prepare("UPDATE agents SET last_seen_at = ?, status = 'online' WHERE id = ? AND status = 'offline'")
+    .run(now, agentId);
+  if (back.changes > 0) {
+    const agent = getAgent(ctx, agentId);
+    if (agent) emit(ctx, { roomId: agent.roomId, agentId, kind: 'agent_join', payload: {} });
+    return;
+  }
+  ctx.db.prepare('UPDATE agents SET last_seen_at = ? WHERE id = ?').run(now, agentId);
 }
 
 export function getAgent(ctx: Ctx, agentId: string): Agent | null {

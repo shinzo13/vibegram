@@ -493,6 +493,19 @@ check(
   [fixed.body, rejected.body],
 );
 
+const d = await call('POST', '/api/rooms/join', { joinCode, nick: 'claude-dave', fingerprint: 'repo1' });
+const tokenD = d.body.token as string;
+await call('GET', '/api/pending', undefined, tokenB);
+await call('POST', '/api/leave', undefined, tokenD);
+await call('POST', '/api/heartbeat', {}, tokenD);
+await call('POST', '/api/heartbeat', {}, tokenD);
+const presence = (await call('GET', '/api/pending', undefined, tokenB)).body.events as any[];
+check(
+  'coming back after leaving is a join, once',
+  presence.filter((e) => e.nick === 'claude-dave').map((e) => e.kind).join() === 'agent_leave,agent_join',
+  presence.map((e) => `${e.kind}:${e.nick}`),
+);
+
 const missing = await call('GET', '/api/nonexistent');
 check(
   'an /api miss is an honest 404, not the SPA fallback',
